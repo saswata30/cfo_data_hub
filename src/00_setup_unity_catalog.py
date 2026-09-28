@@ -13,7 +13,15 @@
 
 show_header("00 · Unity Catalog setup")
 
-spark.sql(f"CREATE CATALOG IF NOT EXISTS {CATALOG} COMMENT 'CFO Data Platform PoC'")
+# Create the catalog only if it isn't already there. On locked-down metastores you may
+# not hold CREATE CATALOG — in that case point the `catalog` widget/variable at an
+# existing catalog you own (you still need CREATE SCHEMA on it).
+existing_catalogs = [r["catalog"] for r in spark.sql("SHOW CATALOGS").collect()]
+if CATALOG in existing_catalogs:
+    print(f"  using existing catalog {CATALOG}")
+else:
+    spark.sql(f"CREATE CATALOG IF NOT EXISTS {CATALOG} COMMENT 'CFO Data Platform PoC'")
+    print(f"  created catalog {CATALOG}")
 
 for zone, schema in SCHEMAS.items():
     spark.sql(

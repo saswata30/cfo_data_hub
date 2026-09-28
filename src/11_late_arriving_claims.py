@@ -55,9 +55,10 @@ BOOKING_DATE = dbutils.widgets.get("booking_date")
 BOOKING = dt.date.fromisoformat(BOOKING_DATE)
 LATE_BATCH = f"{BOOKING.strftime('%Y%m%d')}_LATE"
 
-# Delta schema evolution: lets the MERGEs add the late-arrival audit columns
-# (`_late_arrival`, `_booking_date`) to tables the base pipeline created without them.
-spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
+# The late-arrival audit columns (`_late_arrival`, `_booking_date`) are added to the base
+# tables explicitly via `ensure_cols` below (section 0), so the `MERGE ... SET */INSERT *`
+# statements need no session-level schema-evolution flag — which also keeps this runnable
+# on Serverless compute, where `spark.databricks.delta.schema.autoMerge.enabled` is blocked.
 
 show_header("11 · Late-arriving claim facts & EFR restatement")
 print(f"  booking_date={BOOKING_DATE}  new_late={N_NEW}  developed={N_DEV}  batch={LATE_BATCH}")
@@ -151,7 +152,7 @@ for i, p in enumerate(pol_sample[:N_NEW]):
 dev_sample = (spark.table(CLAIM_TBL)
     .filter("claim_status IN ('OPEN', 'REOPENED')")
     .select("claim_id", "policy_id", "party_id", "line_of_business", "region",
-            "loss_date", "report_date", "cause_of_loss", "incurred_amount",
+            "loss_date", "report_date", "claim_status", "cause_of_loss", "incurred_amount",
             "paid_amount", "reserve_amount", "currency", "fraud_score",
             "fraud_flag", "litigation_flag")
     .orderBy(F.rand(SCALE["seed"] + 13)).limit(N_DEV).collect())
@@ -191,6 +192,10 @@ print(f"  late batch built: {len(late_rows)} claim facts "
 # MAGIC the same ingestion lineage columns, tagged with a distinct `_bronze_batch`.
 
 # COMMAND ----------
+
+# Idempotent: drop any rows from a previous run of this same batch before re-landing.
+if spark.table(fq("lz_raw", "claim")).filter(F.col("_bronze_batch") == LATE_BATCH).limit(1).count() > 0:
+    spark.sql(f"DELETE FROM {fq('lz_raw', 'claim')} WHERE _bronze_batch = '{LATE_BATCH}'")
 
 bronze_cols = spark.table(fq("lz_raw", "claim")).columns
 late_raw = (spark.createDataFrame(late_rows)
@@ -304,12 +309,15 @@ late_gl = (
          "5000", "Losses Paid", "LOSS", "paid_amount", "loss_date", "claim_id", "CLAIM")
     .unionByName(post(fact_aff.filter("reserve_amount > 0"),
          "5100", "Loss Reserves", "RESERVE", "reserve_amount", "report_date", "claim_id", "CLAIM"))
-    .withColumn("gl_id", F.expr("uuid()"))
+    # Deterministic surrogate key (claim + account uniquely identify a posting line). Keeping
+    # it deterministic makes the restatement idempotent and lets the obsolete-posting DELETE
+    # below reference this set — Serverless rejects a DELETE whose subquery is non-deterministic
+    # (which uuid() would make it).
+    .withColumn("gl_id", F.concat_ws("-", F.col("source_ref"), F.col("account_code")))
     .withColumn("posting_period", F.date_format("posting_date", "yyyy-MM"))
     .withColumn("_posted_at", F.current_timestamp())
     .withColumn("_late_arrival", F.lit(True))
     .withColumn("_booking_date", F.to_date(F.lit(BOOKING_DATE))))
-late_gl.cache()
 late_gl.createOrReplaceTempView("late_gl")
 print(f"  recomputed {late_gl.count()} posting lines for the affected claims")
 
