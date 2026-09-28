@@ -1,0 +1,115 @@
+# ===========================================================================
+# CFO Data Platform PoC — Databricks Asset Bundle
+#
+# Implements the "CFO Data Architecture": Sources -> Raw (LZ) -> Data Lake
+# (Organized + Semantic zones, Hub & Spoke data mesh, EFR) -> CFO Reporting,
+# governed end-to-end by Unity Catalog.
+#
+# Deploy:   databricks bundle deploy   -t dev
+# Run:      databricks bundle run cfo_data_platform_pipeline -t dev
+# ===========================================================================
+bundle:
+  name: cfo_data_platform
+
+variables:
+  catalog:
+    description: Unity Catalog catalog for this deployment (isolates dev/test/prod).
+    default: cfo_poc
+
+# All pipeline tasks run on Serverless Jobs compute — no cluster to size.
+# (Requires serverless workflows enabled in the target workspace.)
+resources:
+  jobs:
+    cfo_data_platform_pipeline:
+      name: "[${bundle.target}] CFO Data Platform — LZ ▸ OZ ▸ Hub&Spoke ▸ EFR ▸ Reporting"
+      tags:
+        project: cfo-data-platform-poc
+        owner: saswata30
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+      tasks:
+        - task_key: setup_unity_catalog
+          notebook_task:
+            notebook_path: ./src/00_setup_unity_catalog.py
+            base_parameters: { catalog: "${var.catalog}" }
+
+        - task_key: generate_synthetic_sources
+          depends_on: [{ task_key: setup_unity_catalog }]
+          notebook_task:
+            notebook_path: ./src/01_generate_synthetic_sources.py
+            base_parameters: { catalog: "${var.catalog}" }
+
+        - task_key: landing_zone_bronze
+          depends_on: [{ task_key: generate_synthetic_sources }]
+          notebook_task:
+            notebook_path: ./src/02_landing_zone_bronze.py
+            base_parameters: { catalog: "${var.catalog}" }
+
+        - task_key: organized_zone_silver
+          depends_on: [{ task_key: landing_zone_bronze }]
+          notebook_task:
+            notebook_path: ./src/03_organized_zone_silver.py
+            base_parameters: { catalog: "${var.catalog}" }
+
+        - task_key: hub_master_data
+          depends_on: [{ task_key: organized_zone_silver }]
+          notebook_task:
+            notebook_path: ./src/04_hub_master_data.py
+            base_parameters: { catalog: "${var.catalog}" }
+
+        - task_key: spoke_underwriting
+          depends_on: [{ task_key: hub_master_data }]
+          notebook_task:
+            notebook_path: ./src/05_spoke_underwriting.py
+            base_parameters: { catalog: "${var.catalog}" }
+
+        - task_key: spoke_policy
+          depends_on: [{ task_key: hub_master_data }]
+          notebook_task:
+            notebook_path: ./src/06_spoke_policy.py
+            base_parameters: { catalog: "${var.catalog}" }
+
+        - task_key: spoke_claims
+          depends_on: [{ task_key: hub_master_data }]
+          notebook_task:
+            notebook_path: ./src/07_spoke_claims.py
+            base_parameters: { catalog: "${var.catalog}" }
+
+        - task_key: efr_semantic_gold
+          depends_on:
+            - { task_key: spoke_underwriting }
+            - { task_key: spoke_policy }
+            - { task_key: spoke_claims }
+          notebook_task:
+            notebook_path: ./src/08_efr_semantic_gold.py
+            base_parameters: { catalog: "${var.catalog}" }
+
+        - task_key: reporting_marts
+          depends_on: [{ task_key: efr_semantic_gold }]
+          notebook_task:
+            notebook_path: ./src/09_reporting_marts.py
+            base_parameters: { catalog: "${var.catalog}" }
+
+        - task_key: governance_masking
+          depends_on: [{ task_key: reporting_marts }]
+          notebook_task:
+            notebook_path: ./src/10_governance_masking.py
+            base_parameters: { catalog: "${var.catalog}" }
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # Set your workspace host here or via `databricks configure` / DATABRICKS_HOST.
+    workspace:
+      host: https://adb-XXXXXXXXXXXX.XX.azuredatabricks.net
+    variables:
+      catalog: cfo_poc
+
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-XXXXXXXXXXXX.XX.azuredatabricks.net
+    variables:
+      catalog: cfo_prod

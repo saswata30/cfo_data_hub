@@ -1,0 +1,39 @@
+# ---------------------------------------------------------------------------
+# CFO Data Platform PoC — central configuration
+# Read by every notebook via dbutils.widgets defaults / the databricks.yml bundle.
+# Change `catalog` per environment (dev / test / prod) to isolate the deployment.
+# ---------------------------------------------------------------------------
+
+catalog: cfo_poc
+
+# Medallion + hub-and-spoke schemas (one Unity Catalog schema per architecture zone)
+schemas:
+  lz_raw:        lz_raw          # Raw Data (Landing Zone)  -> Bronze
+  oz_organized:  oz_organized    # Organized Zone           -> Silver (conformed)
+  hub:           hub             # HUB Primary: master data, party profiles, KYC
+  underwriting:  underwriting    # Spoke: Risk, Quotes
+  policy:        policy          # Spoke: Policies, Fees
+  claims:        claims          # Spoke: FNOL, Claims
+  efr:           efr             # Enterprise Finance Reporting (GL, FAH-Detail) — Semantic Zone
+  reporting:     reporting       # CFO Reporting marts (Gold serving views)
+
+# Volume that simulates the source-system landing area (files dropped by extracts)
+landing_volume: landing
+
+# Synthetic data scale (rows). Tune down for a fast smoke test, up for scale demos.
+scale:
+  parties:        5000
+  producers:       400
+  quotes:        12000
+  policies:       8000
+  policy_fees:   16000
+  claims:         6000
+  reinsurance:     600
+  headcount:      1200
+  seed:             42
+
+# Governance: principals that are allowed to see unmasked PII / KYC.
+# Replace with the real Unity Catalog groups in the customer workspace.
+governance:
+  pii_reader_group:  cfo_pii_readers
+  kyc_reader_group:  cfo_kyc_readers
