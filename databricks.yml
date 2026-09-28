@@ -97,6 +97,28 @@ resources:
             notebook_path: ./src/10_governance_masking.py
             base_parameters: { catalog: "${var.catalog}" }
 
+    # Standalone scenario: late-arriving claim facts + EFR restatement.
+    # NOT part of the main pipeline (it mutates gold in place) — run it on demand,
+    # after cfo_data_platform_pipeline has populated the catalog:
+    #   databricks bundle run cfo_late_arriving_claims_scenario -t dev
+    cfo_late_arriving_claims_scenario:
+      name: "[${bundle.target}] CFO Scenario — Late-arriving claims ▸ EFR restatement"
+      tags:
+        project: cfo-data-platform-poc
+        owner: saswata30
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+      tasks:
+        - task_key: late_arriving_claims
+          notebook_task:
+            notebook_path: ./src/11_late_arriving_claims.py
+            base_parameters:
+              catalog: "${var.catalog}"
+              n_new_late_claims: "40"
+              n_developed_claims: "60"
+              booking_date: "2026-09-28"
+
 targets:
   dev:
     mode: development

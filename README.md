@@ -106,6 +106,21 @@ databricks bundle run cfo_data_platform_pipeline -t dev
 Or run the notebooks in `src/` in order (`00` → `10`) in a notebook, passing the
 `catalog` widget. Adjust data volume in `conf/config.yml` (`scale`).
 
+### Scenario — late-arriving claim facts
+
+Insurance facts arrive late: losses reported months after they occur (IBNR emergence) and
+open claims that develop as reserves are re-estimated. `src/11_late_arriving_claims.py` is a
+**standalone scenario** (run it *after* `00`→`09`) showing how the platform absorbs a late
+batch incrementally — `MERGE` upserts through Bronze ▸ Silver ▸ Claims spoke — and then
+**restates EFR**: the `gl_detail` ledger is merged and only the affected `trial_balance`
+periods are rebuilt, so `finance_reporting` reflects the corrected loss / combined ratios.
+Late rows are stamped (`_late_arrival`, `_booking_date`) and Delta time travel keeps the
+pre-restatement numbers auditable. It's idempotent — safe to re-run.
+
+```bash
+databricks bundle run cfo_late_arriving_claims_scenario -t dev
+```
+
 Try the results:
 
 ```sql
@@ -134,7 +149,8 @@ saswata30/
 │   ├── 07_spoke_claims.py
 │   ├── 08_efr_semantic_gold.py
 │   ├── 09_reporting_marts.py
-│   └── 10_governance_masking.py
+│   ├── 10_governance_masking.py
+│   └── 11_late_arriving_claims.py # scenario: late claim facts + EFR restatement (standalone)
 └── docs/architecture.md           # deeper design: data model, lineage, mesh rationale
 ```
 
