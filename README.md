@@ -11,6 +11,11 @@ so the whole thing runs end-to-end in any Databricks workspace with no external 
 
 ## Architecture
 
+![CFO Data Hub architecture flow](docs/architecture-flow.svg)
+
+<details>
+<summary>Text (Mermaid) version</summary>
+
 ```mermaid
 flowchart LR
   subgraph SRC["CFO Data Sources"]
@@ -48,6 +53,8 @@ flowchart LR
   UW & POL & CLM --> EFR --> RPT
   GOV -.governs.- LZ & LAKE & RPT
 ```
+
+</details>
 
 Each box maps to code:
 

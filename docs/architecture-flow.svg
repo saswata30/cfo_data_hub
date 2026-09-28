@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 880" font-family="'Segoe UI',Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#5b6472"/>
+    </marker>
+    <style>
+      .zt{font-size:15px;font-weight:700;fill:#1f2733}
+      .zs{font-size:10.5px;fill:#5b6472}
+      .lbl{font-size:11.5px;fill:#2b3542}
+      .lblb{font-size:11.5px;font-weight:600;fill:#1f2733}
+      .sec{font-size:10px;font-weight:700;letter-spacing:.06em;fill:#8b93a0}
+      .hub{font-size:13px;font-weight:700;fill:#ffffff}
+      .hubs{font-size:9.5px;fill:#d7f0e9}
+      .flow{stroke:#5b6472;stroke-width:2;fill:none;marker-end:url(#arrow)}
+      .title{font-size:26px;font-weight:800;fill:#1b2a4a}
+      .cap{font-size:11px;fill:#7a828f}
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1500" height="880" fill="#ffffff"/>
+  <text x="40" y="46" class="title">CFO Data Hub &#8212; Architecture Flow</text>
+  <text x="40" y="66" class="cap">Medallion lakehouse + Hub &amp; Spoke data mesh on Databricks, governed by Unity Catalog &#183; github.com/saswata30/cfo_data_hub</text>
+
+  <!-- ===== COL A: CFO Data Sources ===== -->
+  <rect x="30" y="90" width="230" height="640" rx="12" fill="#f7f8fa" stroke="#d7dbe2"/>
+  <rect x="30" y="90" width="230" height="6" rx="3" fill="#64748b"/>
+  <text x="145" y="118" text-anchor="middle" class="zt">CFO Data Sources</text>
+  <text x="48" y="150" class="sec">INSURANCE UNDERWRITING</text>
+  <g class="lbl">
+    <text x="52" y="172">US Genius</text><text x="52" y="192">Procede</text>
+    <text x="52" y="212">WINS</text><text x="52" y="232">Guidewire Billing</text>
+    <text x="52" y="252">Swiss Genius</text><text x="52" y="272">Anaplan</text>
+    <text x="52" y="292">Copernic</text><text x="52" y="312">myHR</text>
+    <text x="52" y="332">SHIP</text>
+  </g>
+  <text x="48" y="368" class="sec">REINSURANCE UNDERWRITING</text>
+  <g class="lbl">
+    <text x="52" y="390">Alt Capital</text><text x="52" y="410">RDU</text><text x="52" y="430">Cash</text>
+  </g>
+  <text x="48" y="466" class="sec">DATA QUALITY</text>
+  <text x="52" y="488" class="lbl">Conformance</text>
+  <text x="145" y="700" text-anchor="middle" class="zs">13 source systems</text>
+
+  <!-- ===== COL B: Raw Data (LZ) Bronze ===== -->
+  <rect x="285" y="90" width="180" height="640" rx="12" fill="#faf5ee" stroke="#e2cfb4"/>
+  <rect x="285" y="90" width="180" height="6" rx="3" fill="#b07a3c"/>
+  <text x="375" y="118" text-anchor="middle" class="zt">Raw Data (LZ)</text>
+  <text x="375" y="136" text-anchor="middle" class="zs">Bronze &#183; lz_raw</text>
+  <g class="lbl">
+    <text x="304" y="172">party</text><text x="304" y="192">producer</text>
+    <text x="304" y="212">quote</text><text x="304" y="232">policy</text>
+    <text x="304" y="252">policy_fee</text><text x="304" y="272">billing_txn</text>
+    <text x="304" y="292">claim</text><text x="304" y="312">fnol</text>
+    <text x="304" y="332">reinsurance</text><text x="304" y="352">headcount</text>
+    <text x="304" y="372">plan_forecast</text><text x="304" y="392">reserve_factor</text>
+    <text x="304" y="412">conformance_rule</text>
+  </g>
+  <text x="375" y="470" text-anchor="middle" class="zs">landed as-is</text>
+  <text x="375" y="486" text-anchor="middle" class="zs">+ ingestion lineage</text>
+
+  <!-- ===== COL C: CFO Data Lake ===== -->
+  <rect x="490" y="90" width="790" height="640" rx="14" fill="#fbf3f4" stroke="#e2c3c8"/>
+  <text x="885" y="118" text-anchor="middle" class="zt">CFO Data Lake (Organized &amp; Semantic Zones)</text>
+
+  <!-- Organized Zone strip -->
+  <rect x="510" y="132" width="750" height="60" rx="10" fill="#eef1f5" stroke="#c9d0da"/>
+  <rect x="510" y="132" width="6" height="60" rx="3" fill="#94a3b8"/>
+  <text x="528" y="158" class="lblb">Organized Zone &#183; Silver &#183; oz_organized</text>
+  <text x="528" y="178" class="lbl">cleaned &#183; conformed &#183; de-duplicated &#183; typed &#183; DQ-flagged</text>
+
+  <!-- Hub & Spoke Mesh box -->
+  <rect x="510" y="210" width="620" height="360" rx="12" fill="#eef4f3" stroke="#b8d3cd"/>
+  <text x="820" y="234" text-anchor="middle" class="zt" fill="#0f6b57">Hub &amp; Spoke Data Mesh</text>
+
+  <!-- Finance Engine -->
+  <rect x="524" y="290" width="96" height="120" rx="10" fill="#fdeef4" stroke="#e6b9cf"/>
+  <text x="572" y="330" text-anchor="middle" class="lblb">Finance</text>
+  <text x="572" y="346" text-anchor="middle" class="lblb">Engine</text>
+  <text x="572" y="368" text-anchor="middle" class="zs">FDM &#183; AED</text>
+  <text x="572" y="382" text-anchor="middle" class="zs">EBS &#183; HFM</text>
+
+  <!-- HUB circle -->
+  <circle cx="722" cy="350" r="76" fill="#0f8a6e" stroke="#0b6b56" stroke-width="2"/>
+  <text x="722" y="338" text-anchor="middle" class="hub">HUB Primary</text>
+  <text x="722" y="358" text-anchor="middle" class="hubs">Master Data</text>
+  <text x="722" y="372" text-anchor="middle" class="hubs">Profiles &#183; KYC</text>
+  <text x="722" y="392" text-anchor="middle" class="hubs">(hub)</text>
+
+  <!-- Spokes -->
+  <rect x="852" y="242" width="176" height="72" rx="10" fill="#fdf1e5" stroke="#e8b985"/>
+  <rect x="852" y="242" width="6" height="72" rx="3" fill="#d97a1f"/>
+  <text x="946" y="268" text-anchor="middle" class="lblb">Underwriting</text>
+  <text x="946" y="286" text-anchor="middle" class="zs">Risk, Quotes</text>
+  <text x="946" y="302" text-anchor="middle" class="zs">underwriting</text>
+
+  <rect x="852" y="326" width="176" height="72" rx="10" fill="#eaf1fa" stroke="#a9c3e6"/>
+  <rect x="852" y="326" width="6" height="72" rx="3" fill="#3f6fb0"/>
+  <text x="946" y="352" text-anchor="middle" class="lblb">Policy</text>
+  <text x="946" y="370" text-anchor="middle" class="zs">Policies, Fees</text>
+  <text x="946" y="386" text-anchor="middle" class="zs">policy</text>
+
+  <rect x="852" y="410" width="176" height="72" rx="10" fill="#f2ecfa" stroke="#c7b4e8"/>
+  <rect x="852" y="410" width="6" height="72" rx="3" fill="#7c5cbf"/>
+  <text x="946" y="436" text-anchor="middle" class="lblb">Claims</text>
+  <text x="946" y="454" text-anchor="middle" class="zs">FNOL, Claims</text>
+  <text x="946" y="470" text-anchor="middle" class="zs">claims</text>
+
+  <!-- EFR -->
+  <rect x="1052" y="300" width="64" height="150" rx="10" fill="#e4eeed" stroke="#8fbdb4"/>
+  <text x="1084" y="352" text-anchor="middle" class="lblb">EFR</text>
+  <text x="1084" y="374" text-anchor="middle" class="zs">GL</text>
+  <text x="1084" y="390" text-anchor="middle" class="zs">FAH</text>
+  <text x="1084" y="406" text-anchor="middle" class="zs">Detail</text>
+  <text x="1084" y="428" text-anchor="middle" class="zs">(efr)</text>
+
+  <!-- mesh internal arrows -->
+  <path class="flow" d="M620,350 L642,350"/>
+  <path class="flow" d="M792,330 C826,300 826,290 848,278"/>
+  <path class="flow" d="M798,350 L848,362"/>
+  <path class="flow" d="M792,372 C826,404 826,430 848,446"/>
+  <path class="flow" d="M1028,278 C1046,300 1046,320 1050,340"/>
+  <path class="flow" d="M1028,362 L1050,372"/>
+  <path class="flow" d="M1028,446 C1046,424 1046,404 1050,410"/>
+
+  <text x="885" y="612" text-anchor="middle" class="zs">Gold domain data products conform to shared HUB keys; Finance Engine posts spoke facts to the GL.</text>
+
+  <!-- ===== COL D: CFO Reporting ===== -->
+  <rect x="1300" y="90" width="180" height="640" rx="12" fill="#f7f8fa" stroke="#d7dbe2"/>
+  <rect x="1300" y="90" width="180" height="6" rx="3" fill="#4f46e5"/>
+  <text x="1390" y="118" text-anchor="middle" class="zt">CFO Reporting</text>
+  <text x="1390" y="136" text-anchor="middle" class="zs">Gold serving &#183; reporting</text>
+  <g>
+    <rect x="1316" y="160" width="148" height="52" rx="8" fill="#eef0ff" stroke="#c3c7f2"/>
+    <text x="1390" y="182" text-anchor="middle" class="lblb">Actuarial</text><text x="1390" y="198" text-anchor="middle" class="zs">loss ratios</text>
+    <rect x="1316" y="224" width="148" height="52" rx="8" fill="#eef0ff" stroke="#c3c7f2"/>
+    <text x="1390" y="246" text-anchor="middle" class="lblb">Risk &amp; Fraud</text><text x="1390" y="262" text-anchor="middle" class="zs">fraud triage</text>
+    <rect x="1316" y="288" width="148" height="52" rx="8" fill="#eef0ff" stroke="#c3c7f2"/>
+    <text x="1390" y="310" text-anchor="middle" class="lblb">Policy</text><text x="1390" y="326" text-anchor="middle" class="zs">in-force, GWP</text>
+    <rect x="1316" y="352" width="148" height="52" rx="8" fill="#eef0ff" stroke="#c3c7f2"/>
+    <text x="1390" y="374" text-anchor="middle" class="lblb">Claims</text><text x="1390" y="390" text-anchor="middle" class="zs">severity, reserves</text>
+    <rect x="1316" y="416" width="148" height="52" rx="8" fill="#eef0ff" stroke="#c3c7f2"/>
+    <text x="1390" y="438" text-anchor="middle" class="lblb">Finance</text><text x="1390" y="454" text-anchor="middle" class="zs">combined ratio</text>
+  </g>
+
+  <!-- ===== Cross-column flow arrows ===== -->
+  <path class="flow" d="M260,300 L283,300"/>
+  <path class="flow" d="M465,300 C486,300 490,220 508,182"/>
+  <path class="flow" d="M885,192 L885,208"/>
+  <path class="flow" d="M1116,375 C1250,375 1250,300 1314,290"/>
+
+  <!-- ===== Governance band ===== -->
+  <rect x="30" y="752" width="1450" height="96" rx="12" fill="#f3e3e6" stroke="#d3adb4"/>
+  <rect x="30" y="752" width="1450" height="6" rx="3" fill="#b06b76"/>
+  <text x="755" y="792" text-anchor="middle" class="zt" fill="#7a3d47">Data Security &amp; Governance &#8212; Unity Catalog</text>
+  <text x="755" y="816" text-anchor="middle" class="lbl" fill="#7a3d47">Lineage &#183; Access Control &#183; PII / KYC Column Masking &#183; Classification Tags &#183; Audit &#8212; across every layer</text>
+  <text x="755" y="836" text-anchor="middle" class="zs" fill="#8a5860">catalog: cfo_poc &#183; mask_pii / mask_kyc on tax_id, email, phone, date_of_birth</text>
+</svg>
