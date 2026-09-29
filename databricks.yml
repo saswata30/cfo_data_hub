@@ -5,6 +5,11 @@
 # (Organized + Semantic zones, Hub & Spoke data mesh, EFR) -> CFO Reporting,
 # governed end-to-end by Unity Catalog.
 #
+# Controls: Source->Raw ingestion is wrapped by the Audit, Balance & Control
+# (ABC) framework (task landing_zone_bronze); the Silver conform step runs the
+# declarative Data Quality (DQ) engine (task organized_zone_silver). Both log to
+# the abc_control schema. See src/_abc.py and src/_dq.py.
+#
 # Deploy:   databricks bundle deploy   -t dev
 # Run:      databricks bundle run cfo_data_platform_pipeline -t dev
 # ===========================================================================
@@ -21,7 +26,7 @@ variables:
 resources:
   jobs:
     cfo_data_platform_pipeline:
-      name: "[${bundle.target}] CFO Data Platform — LZ ▸ OZ ▸ Hub&Spoke ▸ EFR ▸ Reporting"
+      name: "[${bundle.target}] CFO Data Platform — LZ+ABC ▸ OZ+DQ ▸ Hub&Spoke ▸ EFR ▸ Reporting"
       tags:
         project: cfo-data-platform-poc
         owner: saswata30

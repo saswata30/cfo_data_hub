@@ -58,6 +58,17 @@
   <text x="375" y="470" text-anchor="middle" class="zs">landed as-is</text>
   <text x="375" y="486" text-anchor="middle" class="zs">+ ingestion lineage</text>
 
+  <!-- ABC controls wrapping Source -> Raw ingestion -->
+  <rect x="299" y="520" width="152" height="158" rx="10" fill="#eef2ff" stroke="#b9c4f0"/>
+  <rect x="299" y="520" width="6" height="158" rx="3" fill="#4f46e5"/>
+  <text x="378" y="544" text-anchor="middle" class="lblb" fill="#3730a3">ABC Controls</text>
+  <text x="378" y="560" text-anchor="middle" class="zs">Audit &#183; Balance &#183; Control</text>
+  <text x="317" y="586" class="lbl">&#8226; ingestion audit log</text>
+  <text x="317" y="606" class="lbl">&#8226; row + $ balance recon</text>
+  <text x="317" y="626" class="lbl">&#8226; control gate (fail-fast)</text>
+  <text x="317" y="646" class="lbl">&#8226; exceptions captured</text>
+  <text x="378" y="668" text-anchor="middle" class="zs">source &#8799; raw &#183; lossless</text>
+
   <!-- ===== COL C: CFO Data Lake ===== -->
   <rect x="490" y="90" width="790" height="640" rx="14" fill="#fbf3f4" stroke="#e2c3c8"/>
   <text x="885" y="118" text-anchor="middle" class="zt">CFO Data Lake (Organized &amp; Semantic Zones)</text>
@@ -66,7 +77,9 @@
   <rect x="510" y="132" width="750" height="60" rx="10" fill="#eef1f5" stroke="#c9d0da"/>
   <rect x="510" y="132" width="6" height="60" rx="3" fill="#94a3b8"/>
   <text x="528" y="158" class="lblb">Organized Zone &#183; Silver &#183; oz_organized</text>
-  <text x="528" y="178" class="lbl">cleaned &#183; conformed &#183; de-duplicated &#183; typed &#183; DQ-flagged</text>
+  <text x="528" y="178" class="lbl">cleaned &#183; conformed &#183; de-duplicated &#183; typed &#183; Data Quality engine (expectations &#183; flag &#183; quarantine)</text>
+  <rect x="1150" y="146" width="96" height="30" rx="8" fill="#eafaf3" stroke="#8fd3ba"/>
+  <text x="1198" y="165" text-anchor="middle" class="lblb" fill="#0f6b57">DQ engine</text>
 
   <!-- Hub & Spoke Mesh box -->
   <rect x="510" y="210" width="620" height="360" rx="12" fill="#eef4f3" stroke="#b8d3cd"/>
@@ -122,7 +135,14 @@
   <path class="flow" d="M1028,362 L1050,372"/>
   <path class="flow" d="M1028,446 C1046,424 1046,404 1050,410"/>
 
-  <text x="885" y="612" text-anchor="middle" class="zs">Gold domain data products conform to shared HUB keys; Finance Engine posts spoke facts to the GL.</text>
+  <text x="820" y="602" text-anchor="middle" class="zs">Gold domain data products conform to shared HUB keys; Finance Engine posts spoke facts to the GL.</text>
+
+  <!-- ABC & DQ results store -->
+  <rect x="510" y="626" width="750" height="86" rx="10" fill="#f5f3ff" stroke="#c9bff0"/>
+  <rect x="510" y="626" width="6" height="86" rx="3" fill="#7c5cbf"/>
+  <text x="528" y="650" class="lblb" fill="#4c1d95">Audit, Balance &amp; Control store &#183; abc_control</text>
+  <text x="528" y="672" class="lbl">ingestion_audit &#183; control_exception  <tspan class="zs">(Source&#8594;Raw ABC)</tspan>   &#183;   dq_result &#183; &lt;entity&gt;_dq_quarantine  <tspan class="zs">(Silver DQ)</tspan></text>
+  <text x="528" y="692" class="zs">every ingestion batch &amp; DQ run correlated by abc_run_id / dq_run_id &#183; a queryable control &amp; audit trail</text>
 
   <!-- ===== COL D: CFO Reporting ===== -->
   <rect x="1300" y="90" width="180" height="640" rx="12" fill="#f7f8fa" stroke="#d7dbe2"/>
@@ -144,6 +164,10 @@
 
   <!-- ===== Cross-column flow arrows ===== -->
   <path class="flow" d="M260,300 L283,300"/>
+  <!-- ABC gate straddling the Source -> Raw ingestion boundary -->
+  <rect x="246" y="264" width="52" height="26" rx="13" fill="#4f46e5" stroke="#3730a3"/>
+  <text x="272" y="281" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="700">ABC</text>
+  <text x="272" y="256" text-anchor="middle" class="sec" fill="#4f46e5">GATE</text>
   <path class="flow" d="M465,300 C486,300 490,220 508,182"/>
   <path class="flow" d="M885,192 L885,208"/>
   <path class="flow" d="M1116,375 C1250,375 1250,300 1314,290"/>
@@ -152,6 +176,6 @@
   <rect x="30" y="752" width="1450" height="96" rx="12" fill="#f3e3e6" stroke="#d3adb4"/>
   <rect x="30" y="752" width="1450" height="6" rx="3" fill="#b06b76"/>
   <text x="755" y="792" text-anchor="middle" class="zt" fill="#7a3d47">Data Security &amp; Governance &#8212; Unity Catalog</text>
-  <text x="755" y="816" text-anchor="middle" class="lbl" fill="#7a3d47">Lineage &#183; Access Control &#183; PII / KYC Column Masking &#183; Classification Tags &#183; Audit &#8212; across every layer</text>
+  <text x="755" y="816" text-anchor="middle" class="lbl" fill="#7a3d47">Lineage &#183; Access Control &#183; PII / KYC Column Masking &#183; Classification Tags &#183; ABC Balance &amp; DQ Audit &#8212; across every layer</text>
   <text x="755" y="836" text-anchor="middle" class="zs" fill="#8a5860">catalog: cfo_poc &#183; mask_pii / mask_kyc on tax_id, email, phone, date_of_birth</text>
 </svg>

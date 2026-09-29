@@ -16,6 +16,17 @@ schemas:
   claims:        claims          # Spoke: FNOL, Claims
   efr:           efr             # Enterprise Finance Reporting (GL, FAH-Detail) — Semantic Zone
   reporting:     reporting       # CFO Reporting marts (Gold serving views)
+  abc_control:   abc_control     # Audit, Balance & Control framework + Silver DQ results
+
+# Audit, Balance & Control (ABC) — Source -> Raw ingestion reconciliation, and
+# the Silver Data Quality (DQ) engine. See src/_abc.py and src/_dq.py.
+controls:
+  # Relative tolerance for the numeric control-total balance (source vs raw).
+  # Bronze ingestion is lossless (read -> write, no filtering), so default = exact.
+  control_total_tolerance: 0.0
+  # Route Silver rows failing a HIGH-severity DQ rule to <entity>_dq_quarantine
+  # (kept out of the conformed table) instead of only flagging them in place.
+  quarantine_dq_failures: true
 
 # Volume that simulates the source-system landing area (files dropped by extracts)
 landing_volume: landing

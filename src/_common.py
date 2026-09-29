@@ -20,6 +20,7 @@ SCHEMAS = {
     "claims":       "claims",        # Spoke: FNOL, Claims
     "efr":          "efr",           # Enterprise Finance Reporting (GL, FAH)  -> Semantic
     "reporting":    "reporting",     # CFO Reporting marts (Gold serving)
+    "abc_control":  "abc_control",   # Audit, Balance & Control framework + Silver DQ results
 }
 
 LANDING_VOLUME = "landing"          # Volume under lz_raw simulating source-system extracts
@@ -41,9 +42,15 @@ SOURCE_SYSTEMS = [
     "anaplan", "copernic", "myhr", "ship", "alt_capital", "rdu", "cash", "conformance",
 ]
 
-# Batch id stamped onto bronze rows for lineage.
+# Batch id stamped onto bronze rows for lineage. Also used as the ABC / DQ run id
+# so an ingestion batch, its balance reconciliation and its Silver DQ results all
+# share one correlation key.
 import datetime as _dt
 NOW_BATCH = _dt.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+
+# Audit, Balance & Control tuning (see src/_abc.py, src/_dq.py).
+CONTROL_TOTAL_TOLERANCE = 0.0     # exact source-vs-raw control-total match (lossless bronze)
+QUARANTINE_DQ_FAILURES = True     # route HIGH-severity Silver DQ failures out of the clean table
 
 
 def fq(zone: str, table: str) -> str:
@@ -61,3 +68,15 @@ def show_header(title: str):
     print(f"  {title}")
     print(f"  catalog = {CATALOG}")
     print("=" * 78)
+
+
+def rows_to_df(rows, schema):
+    """Build a DataFrame from a list of dicts against an explicit schema.
+
+    Maps by field name and orders columns to the schema, so columns whose values
+    are entirely NULL (which break Spark's schema inference) still materialise with
+    the right type. Used by the ABC and DQ frameworks to append their log tables.
+    """
+    names = [f.name for f in schema.fields]
+    data = [tuple(r.get(n) for n in names) for r in rows]
+    return spark.createDataFrame(data, schema)

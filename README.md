@@ -7,7 +7,11 @@ gold layer, CFO reporting marts, and **Unity Catalog** governance spanning every
 It ships with a synthetic commercial P&C / specialty / reinsurance dataset (AXA XL-style)
 so the whole thing runs end-to-end in any Databricks workspace with no external data.
 
-> Sources → Raw (LZ / Bronze) → Organized Zone (Silver) → Hub & Spoke + EFR (Gold) → CFO Reporting, governed by Unity Catalog.
+Source → Raw ingestion is wrapped by an **Audit, Balance & Control (ABC)** framework, and
+the Silver layer runs a declarative **Data Quality (DQ)** engine — both writing a queryable
+control/audit trail to the `abc_control` schema.
+
+> Sources → ⟨**ABC** gate⟩ → Raw (LZ / Bronze) → Organized Zone (Silver **+ DQ**) → Hub & Spoke + EFR (Gold) → CFO Reporting — governed by Unity Catalog.
 
 ## Architecture
 
@@ -24,13 +28,15 @@ flowchart LR
     S2["Reinsurance:<br/>Alt Capital · RDU · Cash"]
   end
 
+  ABCGATE{{"ABC gate<br/><i>audit · balance · control</i>"}}
+
   subgraph LZ["Raw Data (LZ) · Bronze<br/><i>lz_raw</i>"]
     B["party · quote · policy · fee<br/>claim · fnol · reinsurance · hr"]
   end
 
   subgraph LAKE["CFO Data Lake (OZ & SZ)"]
     direction TB
-    OZ["Organized Zone · Silver<br/><i>oz_organized</i><br/>cleaned · conformed · deduped"]
+    OZ["Organized Zone · Silver<br/><i>oz_organized</i><br/>cleaned · conformed · deduped<br/><b>+ DQ engine</b> (flag · quarantine)"]
     subgraph MESH["Hub & Spoke Data Mesh"]
       direction LR
       HUB(("HUB Primary<br/><i>hub</i><br/>Master Data<br/>Profiles · KYC"))
@@ -46,11 +52,15 @@ flowchart LR
     R["Actuarial · Risk & Fraud<br/>Policy · Claims · Finance"]
   end
 
+  ABC[["Audit, Balance & Control<br/><i>abc_control</i><br/>ingestion_audit · control_exception<br/>dq_result · *_dq_quarantine"]]
+
   GOV["Data Security & Governance — Unity Catalog<br/>Lineage · Access Control · PII/KYC Masking · Audit — across every layer"]
 
-  SRC --> LZ --> OZ --> HUB
+  SRC --> ABCGATE --> LZ --> OZ --> HUB
   HUB --> UW & POL & CLM
   UW & POL & CLM --> EFR --> RPT
+  ABCGATE -.audit + balance.-> ABC
+  OZ -.DQ results.-> ABC
   GOV -.governs.- LZ & LAKE & RPT
 ```
 
@@ -61,14 +71,15 @@ Each box maps to code:
 | Architecture element | Unity Catalog schema | Notebook |
 |---|---|---|
 | CFO Data Sources (synthetic extracts) | `lz_raw.landing` (Volume) | `01_generate_synthetic_sources` |
-| Raw Data (LZ) — Bronze | `lz_raw` | `02_landing_zone_bronze` |
-| Organized Zone — Silver | `oz_organized` | `03_organized_zone_silver` |
+| Raw Data (LZ) — Bronze **+ ABC controls** | `lz_raw` | `02_landing_zone_bronze` (+ `_abc`) |
+| Organized Zone — Silver **+ DQ** | `oz_organized` (+ `*_dq_quarantine`) | `03_organized_zone_silver` (+ `_dq`) |
 | HUB Primary (Master Data, KYC) | `hub` | `04_hub_master_data` |
 | Spoke — Underwriting (Risk, Quotes) | `underwriting` | `05_spoke_underwriting` |
 | Spoke — Policy (Policies, Fees) | `policy` | `06_spoke_policy` |
 | Spoke — Claims (FNOL, Claims) | `claims` | `07_spoke_claims` |
 | EFR — Finance Engine (GL, FAH) | `efr` | `08_efr_semantic_gold` |
 | CFO Reporting marts | `reporting` | `09_reporting_marts` |
+| Audit, Balance & Control + DQ results | `abc_control` | `_abc`, `_dq` (invoked by `02` / `03`) |
 | Data Security & Governance | *(all schemas)* | `00_setup_unity_catalog`, `10_governance_masking` |
 
 ## What the pipeline builds
@@ -76,6 +87,15 @@ Each box maps to code:
 - **13 source-system extracts** landed to a Volume (parties+KYC, quotes, policies, fees,
   billing, claims, FNOL, reinsurance treaties, headcount, plan, actuarial factors, DQ rules).
 - **Bronze** raw Delta tables with ingestion lineage; **Silver** conformed/deduped entities.
+- **Audit, Balance & Control (ABC)** on Source → Raw: every entity's landed source is
+  reconciled against the raw target on **row count** and a **numeric control total**
+  (e.g. `SUM(gross_written_premium)` in = out); results append to
+  `abc_control.ingestion_audit`, breaches to `abc_control.control_exception`, and a
+  **control gate fails the run** on a hard breach (nothing landed / row-count imbalance).
+- **Silver Data Quality (DQ)**: a declarative expectation set per entity (not-null, range,
+  allowed-set, regex, **referential integrity** — e.g. every `claim.policy_id` must resolve
+  to a policy). Rows are flagged, HIGH-severity failures routed to `<entity>_dq_quarantine`,
+  and per-rule pass/fail metrics logged to `abc_control.dq_result`.
 - **HUB Primary**: `dim_party`, `dim_producer`, `party_kyc_profile` — the golden keys
   every spoke conforms to.
 - **Three domain spokes** publishing data products: Underwriting (`fact_quote`,
@@ -114,6 +134,21 @@ SELECT * FROM cfo_poc.reporting.actuarial_reporting ORDER BY loss_ratio DESC;
 SELECT * FROM cfo_poc.claims.fraud_triage WHERE triage_priority = 'P1';
 -- PII masking in action (masked unless you're in cfo_pii_readers):
 SELECT party_id, legal_name, tax_id, email, date_of_birth FROM cfo_poc.hub.dim_party LIMIT 5;
+
+-- ABC: Source -> Raw audit & balance trail (one row per entity per run)
+SELECT entity, source_row_count, target_row_count, row_variance,
+       control_column, control_total_variance, rows_balanced, status
+FROM   cfo_poc.abc_control.ingestion_audit
+ORDER  BY abc_run_id DESC, entity;
+
+-- ABC: any control breaches raised
+SELECT * FROM cfo_poc.abc_control.control_exception ORDER BY detected_at DESC;
+
+-- Silver DQ: per-rule pass/fail for the latest run
+SELECT entity, rule_id, rule_type, severity, rows_evaluated, rows_failed, fail_rate, passed
+FROM   cfo_poc.abc_control.dq_result
+WHERE  dq_run_id = (SELECT MAX(dq_run_id) FROM cfo_poc.abc_control.dq_result)
+ORDER  BY passed, severity, entity;
 ```
 
 ## Layout
@@ -124,10 +159,12 @@ saswata30/
 ├── conf/config.yml                # catalog, schemas, data scale, governance groups
 ├── src/
 │   ├── _common.py                 # shared config + helpers (%run-included)
-│   ├── 00_setup_unity_catalog.py  # catalog / schemas / volume
+│   ├── _abc.py                    # Audit, Balance & Control framework (%run-included by 02)
+│   ├── _dq.py                     # Silver Data Quality engine (%run-included by 03)
+│   ├── 00_setup_unity_catalog.py  # catalog / schemas / volume (incl. abc_control)
 │   ├── 01_generate_synthetic_sources.py
-│   ├── 02_landing_zone_bronze.py
-│   ├── 03_organized_zone_silver.py
+│   ├── 02_landing_zone_bronze.py  # Bronze ingest + ABC audit/balance/control gate
+│   ├── 03_organized_zone_silver.py # Silver conform + DQ expectations/quarantine
 │   ├── 04_hub_master_data.py
 │   ├── 05_spoke_underwriting.py
 │   ├── 06_spoke_policy.py

@@ -1,10 +1,14 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # 03 · Organized Zone (OZ) — Silver
+# MAGIC # 03 · Organized Zone (OZ) — Silver, with Data Quality (DQ)
 # MAGIC Cleans and **conforms** the raw entities: enforces types, standardises codes,
-# MAGIC de-duplicates on business keys, casts dates/decimals, and applies a light
-# MAGIC conformance/data-quality flag. Output tables in `oz_organized` are the trusted,
-# MAGIC query-ready versions that the Hub and Spokes build on.
+# MAGIC de-duplicates on business keys, casts dates/decimals. Every conformed entity is
+# MAGIC then passed through the **Silver DQ engine** (`_dq`): declarative expectations
+# MAGIC (not-null, range, allowed-set, regex, referential-integrity) are evaluated,
+# MAGIC each row is flagged, HIGH-severity failures are routed to
+# MAGIC `<entity>_dq_quarantine`, and a per-rule result log is written to
+# MAGIC `abc_control.dq_result`. The clean tables in `oz_organized` are the trusted,
+# MAGIC query-ready versions the Hub and Spokes build on.
 
 # COMMAND ----------
 
@@ -12,9 +16,74 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./_dq
+
+# COMMAND ----------
+
 from pyspark.sql import functions as F, Window
 
-show_header("03 · Organized Zone (Silver)")
+show_header("03 · Organized Zone (Silver) + DQ")
+dq_ensure_tables()
+
+# DQ rule ids reuse the conformance_rule catalogue (CR001..CR005) where they align.
+DQ_CHECKS = {
+    "party": [
+        dq_not_null("party_id"),
+        dq_not_null("tax_id", rule_id="CR002", severity="HIGH"),
+        dq_in_set("kyc_status", ["CLEARED", "PENDING", "REVIEW"], rule_id="DQ_party_kyc_status"),
+        dq_regex("email", r"^[^@\s]+@[^@\s]+\.[^@\s]+$", rule_id="CR004", severity="MEDIUM"),
+    ],
+    "producer": [
+        dq_not_null("producer_id"),
+        dq_range("commission_rate", lo=0, hi=1, rule_id="DQ_producer_commission"),
+    ],
+    "quote": [
+        dq_not_null("quote_id"),
+        dq_not_null("party_id"),
+        dq_range("risk_score", lo=1, hi=100, rule_id="CR005", severity="MEDIUM"),
+        dq_range("premium_quoted", lo=0, rule_id="DQ_quote_premium"),
+    ],
+    "policy": [
+        dq_not_null("policy_id"),
+        dq_not_null("party_id"),
+        dq_range("gross_written_premium", lo=0.01, rule_id="CR001", severity="HIGH"),
+        dq_in_set("policy_status", ["INFORCE", "EXPIRED", "RENEWED", "CANCELLED"],
+                  rule_id="DQ_policy_status"),
+    ],
+    "policy_fee": [
+        dq_not_null("fee_id"),
+        dq_range("amount", lo=0, rule_id="DQ_fee_amount", severity="MEDIUM"),
+    ],
+    "billing_transaction": [
+        dq_not_null("txn_id"),
+        dq_not_null("policy_id"),
+    ],
+    "claim": [
+        dq_not_null("claim_id"),
+        dq_referential("policy_id", "policy", "policy_id", rule_id="CR003", severity="HIGH"),
+        dq_range("incurred_amount", lo=0, rule_id="DQ_claim_incurred"),
+        dq_range("paid_amount", lo=0, rule_id="DQ_claim_paid", severity="MEDIUM"),
+        dq_range("reserve_amount", lo=0, rule_id="DQ_claim_reserve", severity="MEDIUM"),
+    ],
+    "fnol": [
+        dq_not_null("fnol_id"),
+        dq_referential("claim_id", "claim", "claim_id", rule_id="DQ_fnol_claim_ref", severity="HIGH"),
+    ],
+    "reinsurance_contract": [
+        dq_not_null("treaty_id"),
+        dq_range("ceded_share", lo=0, hi=1, rule_id="DQ_reins_ceded_share"),
+    ],
+    "headcount": [
+        dq_not_null("employee_id"),
+        dq_range("fte", lo=0, hi=1, rule_id="DQ_headcount_fte", severity="MEDIUM"),
+    ],
+    "plan_forecast": [dq_not_null("plan_id")],
+    "reserve_factor": [dq_not_null("factor_id")],
+    "conformance_rule": [dq_not_null("rule_id")],
+}
+
+dq_all_results = []
+dq_totals = {"rule_fails": 0, "quarantined": 0}
 
 
 def dedup(df, key, order_col="_ingested_at"):
@@ -26,9 +95,22 @@ def conform(entity, key, transforms):
     df = spark.table(fq("lz_raw", entity))
     df = transforms(df)
     df = dedup(df, key).withColumn("_conformed_at", F.current_timestamp())
+
+    # --- Silver Data Quality: evaluate expectations, flag & quarantine -----
+    checks = DQ_CHECKS.get(entity, [])
+    dq_note = "no dq rules"
+    if checks:
+        df, results, q_count = dq_run(entity, df, checks)
+        dq_write_results(results)
+        dq_all_results.extend(results)
+        rule_fails = sum(not r["passed"] for r in results)
+        dq_totals["rule_fails"] += rule_fails
+        dq_totals["quarantined"] += q_count
+        dq_note = f"dq {len(results)} rules · {rule_fails} failing · {q_count} quarantined"
+
     target = fq("oz_organized", entity)
     df.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(target)
-    print(f"  silver {entity:22s} rows={df.count():>7}  -> {target}")
+    print(f"  silver {entity:22s} rows={df.count():>7}  {dq_note}  -> {target}")
 
 
 # --- party: standardise KYC, cast DOB, upper-case codes -------------------
@@ -94,4 +176,8 @@ conform("plan_forecast", "plan_id", lambda df:
 conform("reserve_factor", "factor_id", lambda df: df)
 conform("conformance_rule", "rule_id", lambda df: df)
 
-print("\nOrganized Zone (Silver) complete.")
+n_failing_rules = sum(not r["passed"] for r in dq_all_results)
+print(f"\nSilver DQ summary · run {NOW_BATCH}: {len(dq_all_results)} rule-checks · "
+      f"{n_failing_rules} failing · {dq_totals['quarantined']} rows quarantined")
+print(f"  DQ results:  {dq_fqt(DQ_RESULT)}")
+print("\nOrganized Zone (Silver) + DQ complete.")
