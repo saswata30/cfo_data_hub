@@ -27,6 +27,14 @@ controls:
   # Route Silver rows failing a HIGH-severity DQ rule to <entity>_dq_quarantine
   # (kept out of the conformed table) instead of only flagging them in place.
   quarantine_dq_failures: true
+  # AI-powered Silver DQ (src/_dq_ai.py): semantic / contextual checks via
+  # Databricks AI Functions (ai_query with structured output). Advisory only —
+  # results are flagged + logged, never quarantined. Sampled and non-fatal, so it
+  # cannot fail the run or run away on cost. Requires Foundation Model API access.
+  ai_dq:
+    enabled: true
+    model_endpoint: databricks-meta-llama-3-3-70b-instruct  # any Serving/FM endpoint or system.ai.*
+    sample_rows: 200                                        # rows sent to the model per check
 
 # Volume that simulates the source-system landing area (files dropped by extracts)
 landing_volume: landing

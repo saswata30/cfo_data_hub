@@ -77,9 +77,9 @@
   <rect x="510" y="132" width="750" height="60" rx="10" fill="#eef1f5" stroke="#c9d0da"/>
   <rect x="510" y="132" width="6" height="60" rx="3" fill="#94a3b8"/>
   <text x="528" y="158" class="lblb">Organized Zone &#183; Silver &#183; oz_organized</text>
-  <text x="528" y="178" class="lbl">cleaned &#183; conformed &#183; de-duplicated &#183; typed &#183; Data Quality engine (expectations &#183; flag &#183; quarantine)</text>
-  <rect x="1150" y="146" width="96" height="30" rx="8" fill="#eafaf3" stroke="#8fd3ba"/>
-  <text x="1198" y="165" text-anchor="middle" class="lblb" fill="#0f6b57">DQ engine</text>
+  <text x="528" y="178" class="lbl">cleaned &#183; conformed &#183; de-duplicated &#183; typed &#183; DQ engine &#8212; rule expectations + AI Functions (ai_query) &#183; flag &#183; quarantine</text>
+  <rect x="1132" y="146" width="114" height="30" rx="8" fill="#eafaf3" stroke="#8fd3ba"/>
+  <text x="1189" y="165" text-anchor="middle" class="lblb" fill="#0f6b57">DQ &#183; rules + AI</text>
 
   <!-- Hub & Spoke Mesh box -->
   <rect x="510" y="210" width="620" height="360" rx="12" fill="#eef4f3" stroke="#b8d3cd"/>
@@ -141,7 +141,7 @@
   <rect x="510" y="626" width="750" height="86" rx="10" fill="#f5f3ff" stroke="#c9bff0"/>
   <rect x="510" y="626" width="6" height="86" rx="3" fill="#7c5cbf"/>
   <text x="528" y="650" class="lblb" fill="#4c1d95">Audit, Balance &amp; Control store &#183; abc_control</text>
-  <text x="528" y="672" class="lbl">ingestion_audit &#183; control_exception  <tspan class="zs">(Source&#8594;Raw ABC)</tspan>   &#183;   dq_result &#183; &lt;entity&gt;_dq_quarantine  <tspan class="zs">(Silver DQ)</tspan></text>
+  <text x="528" y="672" class="lbl">ingestion_audit &#183; control_exception  <tspan class="zs">(Source&#8594;Raw ABC)</tspan>   &#183;   dq_result &#183; dq_ai_result &#183; &lt;entity&gt;_dq_quarantine / _dq_ai_flagged  <tspan class="zs">(Silver DQ &#183; rules + AI)</tspan></text>
   <text x="528" y="692" class="zs">every ingestion batch &amp; DQ run correlated by abc_run_id / dq_run_id &#183; a queryable control &amp; audit trail</text>
 
   <!-- ===== COL D: CFO Reporting ===== -->

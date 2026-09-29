@@ -52,6 +52,13 @@ NOW_BATCH = _dt.datetime.utcnow().strftime("%Y%m%d%H%M%S")
 CONTROL_TOTAL_TOLERANCE = 0.0     # exact source-vs-raw control-total match (lossless bronze)
 QUARANTINE_DQ_FAILURES = True     # route HIGH-severity Silver DQ failures out of the clean table
 
+# AI-powered Silver DQ tuning (see src/_dq_ai.py). AI Functions call a foundation
+# model per row, so this pass is sampled and non-fatal. Disable, or point at a
+# cheaper endpoint (e.g. "system.ai.gpt-oss-20b"), to control cost.
+AI_DQ_ENABLED = True
+AI_DQ_MODEL = "databricks-meta-llama-3-3-70b-instruct"
+AI_DQ_SAMPLE_ROWS = 200
+
 
 def fq(zone: str, table: str) -> str:
     """Fully-qualified `catalog.schema.table` for an architecture zone."""

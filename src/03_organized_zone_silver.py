@@ -20,6 +20,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./_dq_ai
+
+# COMMAND ----------
+
 from pyspark.sql import functions as F, Window
 
 show_header("03 · Organized Zone (Silver) + DQ")
@@ -180,4 +184,14 @@ n_failing_rules = sum(not r["passed"] for r in dq_all_results)
 print(f"\nSilver DQ summary · run {NOW_BATCH}: {len(dq_all_results)} rule-checks · "
       f"{n_failing_rules} failing · {dq_totals['quarantined']} rows quarantined")
 print(f"  DQ results:  {dq_fqt(DQ_RESULT)}")
+
+# --- AI-powered semantic DQ (advisory; sampled; non-fatal) ----------------
+print("\nAI DQ (Databricks AI Functions):")
+ai_results = run_ai_dq()
+for r in ai_results:
+    print(f"  [{r['severity']:<6}] {r['entity']}.{r['check_name']:<28} "
+          f"flagged {r['rows_flagged']}/{r['rows_evaluated']} ({r['flag_rate']:.1%})")
+if ai_results:
+    print(f"  AI DQ results: {dq_ai_fqt(DQ_AI_RESULT)}")
+
 print("\nOrganized Zone (Silver) + DQ complete.")

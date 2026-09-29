@@ -84,6 +84,35 @@ Severity drives routing: HIGH failures are quarantined; MEDIUM failures (e.g. an
 regex miss) are flagged and recorded but stay in the conformed table. This keeps the
 medallion contract — Silver is *trusted* — while preserving a complete DQ audit trail.
 
+### AI-powered DQ (Databricks AI Functions)
+
+Deterministic rules cover *structural* quality (types, ranges, keys, referential
+integrity) exactly and for free. `src/_dq_ai.py` adds a second layer for *semantic /
+contextual* quality that rules cannot express, using **Databricks AI Functions**
+(`ai_query` with a `STRUCT<...>` `responseFormat` for typed, endpoint-agnostic verdicts):
+
+| Check | Entity | Columns | Verdict |
+|---|---|---|---|
+| Legal-name validity | `party` | `legal_name` | plausible real entity vs. test/placeholder/gibberish |
+| Cause ↔ line-of-business plausibility | `claim` | `cause_of_loss`, `line_of_business` | consistent pairing for a P&C / specialty insurer |
+| Description ↔ cause consistency | `fnol` | `description`, `cause_of_loss` | free-text matches the coded cause |
+
+Design guarantees, because LLM verdicts are probabilistic and metered:
+
+- **Advisory, not gating** — flagged rows are logged to `abc_control.dq_ai_result` and
+  copied to `oz_organized.<entity>_dq_ai_flagged`, but are **never quarantined**. Only the
+  deterministic HIGH-severity rules remove rows from Silver.
+- **Sampled** — each check scores at most `controls.ai_dq.sample_rows` rows (default 200),
+  so cost is bounded regardless of table size.
+- **Non-fatal** — the whole AI pass is wrapped so any AI Function / endpoint / permission
+  error is caught and logged; the pipeline continues.
+- **Configurable** — `controls.ai_dq.enabled` toggles it; `model_endpoint` points at any
+  Serving / Foundation Model endpoint (e.g. `databricks-meta-llama-3-3-70b-instruct`, or a
+  cheaper `system.ai.gpt-oss-20b`). The task-specific functions `ai_classify`, `ai_mask`
+  and `ai_similarity` are drop-in alternatives for these checks.
+
+Requires Foundation Model API access and a DBR / serverless SQL that supports AI Functions.
+
 ## Data model (key entities)
 
 ```mermaid

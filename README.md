@@ -8,8 +8,9 @@ It ships with a synthetic commercial P&C / specialty / reinsurance dataset (AXA 
 so the whole thing runs end-to-end in any Databricks workspace with no external data.
 
 Source → Raw ingestion is wrapped by an **Audit, Balance & Control (ABC)** framework, and
-the Silver layer runs a declarative **Data Quality (DQ)** engine — both writing a queryable
-control/audit trail to the `abc_control` schema.
+the Silver layer runs a declarative **Data Quality (DQ)** engine — deterministic rules **plus
+AI-Function checks** (Databricks `ai_query`) for semantic/contextual quality — both writing a
+queryable control/audit trail to the `abc_control` schema.
 
 > Sources → ⟨**ABC** gate⟩ → Raw (LZ / Bronze) → Organized Zone (Silver **+ DQ**) → Hub & Spoke + EFR (Gold) → CFO Reporting — governed by Unity Catalog.
 
@@ -36,7 +37,7 @@ flowchart LR
 
   subgraph LAKE["CFO Data Lake (OZ & SZ)"]
     direction TB
-    OZ["Organized Zone · Silver<br/><i>oz_organized</i><br/>cleaned · conformed · deduped<br/><b>+ DQ engine</b> (flag · quarantine)"]
+    OZ["Organized Zone · Silver<br/><i>oz_organized</i><br/>cleaned · conformed · deduped<br/><b>+ DQ engine</b> (rules + AI · flag · quarantine)"]
     subgraph MESH["Hub & Spoke Data Mesh"]
       direction LR
       HUB(("HUB Primary<br/><i>hub</i><br/>Master Data<br/>Profiles · KYC"))
@@ -72,7 +73,7 @@ Each box maps to code:
 |---|---|---|
 | CFO Data Sources (synthetic extracts) | `lz_raw.landing` (Volume) | `01_generate_synthetic_sources` |
 | Raw Data (LZ) — Bronze **+ ABC controls** | `lz_raw` | `02_landing_zone_bronze` (+ `_abc`) |
-| Organized Zone — Silver **+ DQ** | `oz_organized` (+ `*_dq_quarantine`) | `03_organized_zone_silver` (+ `_dq`) |
+| Organized Zone — Silver **+ DQ (rules + AI)** | `oz_organized` (+ `*_dq_quarantine`, `*_dq_ai_flagged`) | `03_organized_zone_silver` (+ `_dq`, `_dq_ai`) |
 | HUB Primary (Master Data, KYC) | `hub` | `04_hub_master_data` |
 | Spoke — Underwriting (Risk, Quotes) | `underwriting` | `05_spoke_underwriting` |
 | Spoke — Policy (Policies, Fees) | `policy` | `06_spoke_policy` |
@@ -96,6 +97,12 @@ Each box maps to code:
   allowed-set, regex, **referential integrity** — e.g. every `claim.policy_id` must resolve
   to a policy). Rows are flagged, HIGH-severity failures routed to `<entity>_dq_quarantine`,
   and per-rule pass/fail metrics logged to `abc_control.dq_result`.
+- **AI-powered DQ** (Databricks **AI Functions**, `ai_query` with structured output) for the
+  semantic checks rules can't express: is a `party.legal_name` a real entity vs. gibberish;
+  is a claim's `cause_of_loss` plausible for its `line_of_business`; does an FNOL
+  `description` match the coded cause. **Advisory** (flag + log, never quarantine),
+  **sampled** and **non-fatal**; results in `abc_control.dq_ai_result`, flagged rows in
+  `<entity>_dq_ai_flagged`. Toggle via `controls.ai_dq` in `conf/config.yml`.
 - **HUB Primary**: `dim_party`, `dim_producer`, `party_kyc_profile` — the golden keys
   every spoke conforms to.
 - **Three domain spokes** publishing data products: Underwriting (`fact_quote`,
@@ -149,6 +156,13 @@ SELECT entity, rule_id, rule_type, severity, rows_evaluated, rows_failed, fail_r
 FROM   cfo_poc.abc_control.dq_result
 WHERE  dq_run_id = (SELECT MAX(dq_run_id) FROM cfo_poc.abc_control.dq_result)
 ORDER  BY passed, severity, entity;
+
+-- AI DQ: semantic checks via Databricks AI Functions (advisory)
+SELECT entity, check_name, check_type, model, rows_evaluated, rows_flagged, flag_rate
+FROM   cfo_poc.abc_control.dq_ai_result
+ORDER  BY dq_run_id DESC, flag_rate DESC;
+-- inspect the rows the model flagged, e.g. implausible claims:
+SELECT * FROM cfo_poc.oz_organized.claim_dq_ai_flagged LIMIT 20;
 ```
 
 ## Layout
@@ -160,7 +174,8 @@ saswata30/
 ├── src/
 │   ├── _common.py                 # shared config + helpers (%run-included)
 │   ├── _abc.py                    # Audit, Balance & Control framework (%run-included by 02)
-│   ├── _dq.py                     # Silver Data Quality engine (%run-included by 03)
+│   ├── _dq.py                     # Silver Data Quality engine — rules (%run-included by 03)
+│   ├── _dq_ai.py                  # Silver Data Quality — AI Functions (%run-included by 03)
 │   ├── 00_setup_unity_catalog.py  # catalog / schemas / volume (incl. abc_control)
 │   ├── 01_generate_synthetic_sources.py
 │   ├── 02_landing_zone_bronze.py  # Bronze ingest + ABC audit/balance/control gate
