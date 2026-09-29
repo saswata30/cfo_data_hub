@@ -120,24 +120,30 @@ def dq_ai_check(entity, df, prompt_expr, response_struct, pass_field,
               .withColumn("_ai_pass", F.col(f"_ai.{pass_field}"))
               .withColumn("_ai_issue", F.col("_ai.issue")))
     sample = sample.cache()
-    evaluated = sample.count()
-    flagged_df = sample.filter(F.col("_ai_pass") == F.lit(False))
-    flagged = flagged_df.count()
-    if flagged > 0:
+    try:
+        evaluated = sample.count()
+        # A NULL verdict means the model could not judge the row — flag it for
+        # review rather than silently passing it (conservative DQ posture).
+        flagged_df = sample.filter(~F.coalesce(F.col("_ai_pass"), F.lit(False)))
+        flagged = flagged_df.count()
+        # Always overwrite (even with 0 rows) so the table reflects THIS run and
+        # never leaves a previous run's flagged rows behind.
         (flagged_df.drop("_ai", "_ai_pass")
             .withColumn("_dq_ai_run_id", F.lit(NOW_BATCH))
             .withColumn("_dq_ai_check", F.lit(check_name))
             .write.mode("overwrite").option("overwriteSchema", "true")
             .saveAsTable(fq("oz_organized", f"{entity}_dq_ai_flagged")))
-    return {
-        "dq_run_id": NOW_BATCH, "layer": "oz_silver_ai", "entity": entity,
-        "check_name": check_name, "check_type": check_type, "model": AI_DQ_MODEL,
-        "text_columns": text_columns,
-        "rows_evaluated": int(evaluated), "rows_flagged": int(flagged),
-        "flag_rate": round(flagged / evaluated, 6) if evaluated else 0.0,
-        "severity": severity, "sample_rows": int(sample_rows),
-        "description": description, "checked_at": now,
-    }
+        return {
+            "dq_run_id": NOW_BATCH, "layer": "oz_silver_ai", "entity": entity,
+            "check_name": check_name, "check_type": check_type, "model": AI_DQ_MODEL,
+            "text_columns": text_columns,
+            "rows_evaluated": int(evaluated), "rows_flagged": int(flagged),
+            "flag_rate": round(flagged / evaluated, 6) if evaluated else 0.0,
+            "severity": severity, "sample_rows": int(sample_rows),
+            "description": description, "checked_at": now,
+        }
+    finally:
+        sample.unpersist()
 
 
 def dq_ai_write_results(results):
@@ -153,11 +159,14 @@ def run_ai_dq():
     permission error is non-fatal — it is logged and the pipeline continues.
     """
     if not AI_DQ_ENABLED:
-        print("  AI DQ disabled (controls.ai_dq.enabled = false) — skipping.")
+        print("  AI DQ disabled (AI_DQ_ENABLED = False in src/_common.py) — skipping.")
         return []
 
     dq_ai_ensure_tables()
     results = []
+
+    # Each check is isolated: a failure in one (endpoint throttling, permission)
+    # is non-fatal and does not discard results already computed by the others.
     try:
         party = spark.table(fq("oz_organized", "party"))
         results.append(dq_ai_check(
@@ -167,7 +176,10 @@ def run_ai_dq():
             pass_field="is_valid", check_name="legal_name_validity",
             check_type="AI_QUERY_VALIDITY", text_columns="legal_name",
             description="Party legal name is a plausible real entity (not test/gibberish)"))
+    except Exception as e:
+        print(f"  AI DQ [party.legal_name_validity] skipped (non-fatal): {type(e).__name__}: {str(e)[:160]}")
 
+    try:
         claim = spark.table(fq("oz_organized", "claim"))
         results.append(dq_ai_check(
             "claim", claim,
@@ -177,12 +189,14 @@ def run_ai_dq():
             pass_field="is_plausible", check_name="cause_lob_plausibility",
             check_type="AI_QUERY_CONSISTENCY", text_columns="cause_of_loss,line_of_business",
             description="Claim cause_of_loss is plausible for the policy line_of_business"))
+    except Exception as e:
+        print(f"  AI DQ [claim.cause_lob_plausibility] skipped (non-fatal): {type(e).__name__}: {str(e)[:160]}")
 
+    try:
         fnol = spark.table(fq("oz_organized", "fnol"))
         cause = spark.table(fq("oz_organized", "claim")).select("claim_id", "cause_of_loss")
-        fnol_c = fnol.join(cause, "claim_id", "left")
         results.append(dq_ai_check(
-            "fnol", fnol_c,
+            "fnol", fnol.join(cause, "claim_id", "left"),
             prompt_expr=(f"concat('{_P_DESC_CAUSE}  FNOL description: ', coalesce(description, ''), "
                          f"'. Recorded cause of loss: ', coalesce(cause_of_loss, ''))"),
             response_struct="STRUCT<matches:BOOLEAN, issue:STRING>",
@@ -190,8 +204,13 @@ def run_ai_dq():
             check_type="AI_QUERY_CONSISTENCY", text_columns="description,cause_of_loss",
             description="FNOL free-text description is consistent with the recorded cause",
             severity="LOW"))
-
-        dq_ai_write_results(results)
     except Exception as e:
-        print(f"  AI DQ skipped/failed (non-fatal): {type(e).__name__}: {str(e)[:200]}")
+        print(f"  AI DQ [fnol.description_cause_consistency] skipped (non-fatal): {type(e).__name__}: {str(e)[:160]}")
+
+    # Persist whatever completed, even if a later check failed above.
+    if results:
+        try:
+            dq_ai_write_results(results)
+        except Exception as e:
+            print(f"  AI DQ results write failed (non-fatal): {type(e).__name__}: {str(e)[:160]}")
     return results

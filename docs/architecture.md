@@ -106,10 +106,12 @@ Design guarantees, because LLM verdicts are probabilistic and metered:
   so cost is bounded regardless of table size.
 - **Non-fatal** — the whole AI pass is wrapped so any AI Function / endpoint / permission
   error is caught and logged; the pipeline continues.
-- **Configurable** — `controls.ai_dq.enabled` toggles it; `model_endpoint` points at any
-  Serving / Foundation Model endpoint (e.g. `databricks-meta-llama-3-3-70b-instruct`, or a
-  cheaper `system.ai.gpt-oss-20b`). The task-specific functions `ai_classify`, `ai_mask`
-  and `ai_similarity` are drop-in alternatives for these checks.
+- **Configurable** — `AI_DQ_ENABLED` in `src/_common.py` toggles it (the effective value;
+  `controls.ai_dq.enabled` in `conf/config.yml` mirrors it for documentation, as with the
+  rest of the config); `AI_DQ_MODEL` points at any Serving / Foundation Model endpoint (e.g.
+  `databricks-meta-llama-3-3-70b-instruct`, or a cheaper `system.ai.gpt-oss-20b`). The
+  task-specific functions `ai_classify`, `ai_mask` and `ai_similarity` are drop-in
+  alternatives for these checks.
 
 Requires Foundation Model API access and a DBR / serverless SQL that supports AI Functions.
 

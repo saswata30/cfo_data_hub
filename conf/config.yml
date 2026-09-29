@@ -31,6 +31,8 @@ controls:
   # Databricks AI Functions (ai_query with structured output). Advisory only —
   # results are flagged + logged, never quarantined. Sampled and non-fatal, so it
   # cannot fail the run or run away on cost. Requires Foundation Model API access.
+  # NOTE: the EFFECTIVE values are AI_DQ_ENABLED / AI_DQ_MODEL / AI_DQ_SAMPLE_ROWS
+  # in src/_common.py; this block mirrors them (only `catalog` is wired via widgets).
   ai_dq:
     enabled: true
     model_endpoint: databricks-meta-llama-3-3-70b-instruct  # any Serving/FM endpoint or system.ai.*

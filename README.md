@@ -102,7 +102,9 @@ Each box maps to code:
   is a claim's `cause_of_loss` plausible for its `line_of_business`; does an FNOL
   `description` match the coded cause. **Advisory** (flag + log, never quarantine),
   **sampled** and **non-fatal**; results in `abc_control.dq_ai_result`, flagged rows in
-  `<entity>_dq_ai_flagged`. Toggle via `controls.ai_dq` in `conf/config.yml`.
+  `<entity>_dq_ai_flagged`. Toggle/tune in `src/_common.py` (`AI_DQ_ENABLED`,
+  `AI_DQ_MODEL`, `AI_DQ_SAMPLE_ROWS`) — the effective values; `conf/config.yml`
+  mirrors them under `controls.ai_dq` for documentation.
 - **HUB Primary**: `dim_party`, `dim_producer`, `party_kyc_profile` — the golden keys
   every spoke conforms to.
 - **Three domain spokes** publishing data products: Underwriting (`fact_quote`,
