@@ -192,7 +192,9 @@ saswata30/
 └── docs/architecture.md           # deeper design: data model, lineage, mesh rationale
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for the data model and design notes.
+See [`docs/architecture.md`](docs/architecture.md) for the data model and design notes, and
+[`docs/use-case-story.md`](docs/use-case-story.md) for the business story — who this serves,
+the problem it solves, and the outcomes for the office of the CFO.
 
 ---
 *Proof of concept — synthetic data only, not for production use.*
