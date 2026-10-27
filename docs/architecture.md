@@ -138,7 +138,9 @@ erDiagram
 **Policy** — `fact_policy` (GWP, net premium, in-force), `fact_policy_fee`, `premium_summary`.
 **Claims** — `fact_claim` (incurred/paid/reserve, fraud score, severity band),
 `fraud_triage`.
-**EFR** — `gl_detail` (posting lines), `trial_balance`, `reinsurance_ceded`.
+**EFR** — `gl_detail` (append-only posting lines with `entry_type` and `origin_period`),
+`trial_balance` (booked, by posting period), `trial_balance_by_origin` (restated, by
+accident period), `period_control` (OPEN / CLOSED), `late_arrival_log`, `reinsurance_ceded`.
 
 ## Finance Engine → GL posting rules
 
@@ -154,7 +156,25 @@ erDiagram
 | Loss reserves | `claims.fact_claim` | 5100 Loss Reserves | RESERVE |
 
 `finance_reporting` then derives **loss ratio**, **expense ratio** and **combined ratio**
-per LOB / region / period from the trial balance.
+per LOB / region / period from the trial balance; `finance_reporting_by_origin` does the
+same by origin (accident) period.
+
+## Late-arriving facts → EFR
+
+A late claim fact (late-reported loss or development on an open claim) flows Landing →
+Bronze (ABC-balanced append) → Silver (DQ + `MERGE`) → Claims spoke (`MERGE` of affected
+keys) → EFR. In EFR, `11_late_arriving_claims` compares, per claim × account × origin
+period, what the claim **now requires** with what is **already booked**, and posts only the
+difference:
+
+- origin period **OPEN** → `LATE_ADJ` journal in that period;
+- origin period **CLOSED** → `PRIOR_PERIOD_ADJ` journal in the current open (booking)
+  period, keeping `origin_period` = the closed period.
+
+Originals are never edited and closed periods are never re-posted; a control check fails the
+run if any closed-period balance in `trial_balance` changes. `trial_balance_by_origin`
+re-attributes every journal to its origin period, so the restated view is exact. Deltas make
+the process idempotent: re-running a batch posts nothing.
 
 ## Governance (Unity Catalog, every layer)
 
@@ -172,7 +192,8 @@ per LOB / region / period from the trial balance.
   Genius / Guidewire / Anaplan extracts — the Volume landing pattern is already in place.
   ABC row/control-total balance then reconciles the live extracts against Bronze.
 - Add a **Genie space** over `reporting.*` for natural-language CFO queries.
-- Promote reporting views to **materialized views** or a **Lakeview dashboard** per report area.
+- Promote reporting views to **materialized views**; extend the EFR AI/BI dashboard
+  (`dashboards/efr_finance.lvdash.json`) with one page per report area.
 - Add **row-level security** (e.g. region-based) alongside the existing column masks.
 - Build a **Lakeview control dashboard** over `abc_control.*` (balance status per run,
   DQ fail-rate trends, quarantine volumes) and alert on `control_exception` rows.

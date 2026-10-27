@@ -230,10 +230,12 @@ Each box maps to code:
 - **Three domain spokes** publishing data products: Underwriting (`fact_quote`,
   `risk_appetite_summary`), Policy (`fact_policy`, `premium_summary`), Claims
   (`fact_claim`, `fraud_triage`).
-- **EFR gold**: a general ledger (`gl_detail`), `trial_balance`, and `reinsurance_ceded`
-  posted by a Finance Engine step.
+- **EFR gold**: a general ledger (`gl_detail`), `trial_balance` (booked) and
+  `trial_balance_by_origin` (restated), `period_control`, `late_arrival_log` and
+  `reinsurance_ceded`, posted by a Finance Engine step.
 - **CFO Reporting views**: `actuarial_reporting`, `risk_fraud_reporting`,
-  `policy_reporting`, `claims_reporting`, `finance_reporting` (loss / expense / combined ratios).
+  `policy_reporting`, `claims_reporting`, `finance_reporting` (loss / expense / combined ratios),
+  `finance_reporting_by_origin` (restated) and `efr_late_arrival_summary`.
 - **Governance**: column masks on PII (`tax_id`, `email`, `phone`, `date_of_birth`) and KYC,
   `pii`/`kyc` classification tags, and access grants.
 
@@ -245,15 +247,79 @@ Prereqs: a Unity Catalog-enabled Databricks workspace, the [Databricks CLI](http
 # 1. Authenticate
 databricks configure                      # or set DATABRICKS_HOST / DATABRICKS_TOKEN
 
-# 2. Point the bundle at your workspace: edit workspace.host in databricks.yml
+# 2. Deploy (the workspace comes from your CLI profile; pick a catalog and a SQL warehouse
+#    for the EFR dashboard). Use an existing catalog if you can't create one.
+databricks bundle deploy -t dev -p <profile> \
+  --var catalog=<catalog> --var warehouse_id=<sql-warehouse-id>
 
-# 3. Deploy + run the whole pipeline
-databricks bundle deploy -t dev
-databricks bundle run cfo_data_platform_pipeline -t dev
+# 3. Run the whole pipeline (same --var flags)
+databricks bundle run cfo_data_platform_pipeline -t dev -p <profile> --var catalog=<catalog> --var warehouse_id=<id>
 ```
 
 Or run the notebooks in `src/` in order (`00` → `10`) in a notebook, passing the
 `catalog` widget. Adjust data volume in `conf/config.yml` (`scale`).
+
+### Scenario — late-arriving claim facts and how they reach EFR
+
+Claim facts arrive late: losses reported months after they occur (IBNR emergence) and open
+claims that develop as reserves are re-estimated. Finance needs two things at once: **closed
+periods must not change**, and actuarial / management views need the truth **by accident
+period**. `src/11_late_arriving_claims.py` is a standalone scenario (run it after the main
+pipeline) that implements this end to end:
+
+| Step | Layer | What happens |
+|---|---|---|
+| 0 | EFR | Close every period up to `close_through_period` in `efr.period_control` |
+| 1 | — | Build a late batch: new late-reported claims (backdated `loss_date`) + development on open claims |
+| 2 | Landing → Bronze | File lands in `lz_raw.landing/ship/claim_late/<batch>`, appended to `lz_raw.claim`; **ABC** balances rows and `SUM(incurred_amount)` and gates the run |
+| 3 | Silver | Same conform + **DQ** rules as notebook 03 (unknown-policy claims quarantined), `MERGE` on `claim_id` |
+| 4 | Claims spoke | Recompute `fact_claim` / `fraud_triage` for affected claims only, `MERGE` |
+| 5 | EFR | Required postings per claim × account (5000 Losses Paid by `loss_date`, 5100 Loss Reserves by `report_date`) |
+| 6 | EFR | `adjustment = required − already booked`; build delta journals (rule below) |
+| 7 | EFR | Append to `gl_detail`; rebuild touched periods of `trial_balance` and `trial_balance_by_origin`; **control check** that closed periods did not move |
+| 8–9 | Reporting | Booked vs restated ratios; audit in `efr.late_arrival_log` + Delta time travel |
+
+**How EFR is populated.** The ledger is append-only; original lines are never edited:
+
+| Origin period of the posting | Journal | `entry_type` | `posting_period` |
+|---|---|---|---|
+| OPEN | the delta, in the same period | `LATE_ADJ` | origin period |
+| CLOSED | the delta, in the current open period | `PRIOR_PERIOD_ADJ` | booking period |
+
+Every line keeps its `origin_period`, so one ledger gives two views:
+`reporting.finance_reporting` (**booked**, by posting period, closed periods frozen) and
+`reporting.finance_reporting_by_origin` (**restated**, by accident period). Re-running the
+scenario posts nothing new, because deltas are computed against what is already booked.
+
+```bash
+databricks bundle run cfo_late_arriving_claims_scenario -t dev -p <profile> --var catalog=<catalog> --var warehouse_id=<id>
+# optional job parameters: booking_date (YYYY-MM-DD, default today),
+#                          close_through_period (YYYY-MM, default the month before)
+```
+
+```sql
+-- Booked vs restated loss ratio for the periods the late batch touched
+SELECT b.posting_period AS period, b.loss_ratio AS booked, o.loss_ratio AS restated
+FROM (SELECT posting_period, SUM(losses_paid+reserves)/SUM(premium_revenue) loss_ratio
+      FROM reporting.finance_reporting GROUP BY 1) b
+JOIN (SELECT origin_period, SUM(losses_paid+reserves)/SUM(premium_revenue) loss_ratio
+      FROM reporting.finance_reporting_by_origin GROUP BY 1) o ON o.origin_period = b.posting_period
+WHERE abs(o.loss_ratio - b.loss_ratio) > 0.0001 ORDER BY 1;
+
+-- Every journal the late batch produced
+SELECT * FROM efr.late_arrival_log ORDER BY batch_id, claim_id, account_code;
+```
+
+### EFR dashboard
+
+The bundle deploys an AI/BI dashboard, **EFR — Enterprise Finance Reporting**
+(`dashboards/efr_finance.lvdash.json`, generated by `scripts/build_efr_dashboard.py`):
+
+- **EFR overview:** premium, claims cost, expenses, underwriting result, loss and combined ratio;
+  booked vs restated combined ratio by month; trial balance by GL category; results by line of
+  business; account balances; reinsurance ceded.
+- **Late-arriving claims:** batches, late claims, prior-period vs open-period adjustments,
+  closed periods; adjustments by origin period; largest restatements; period control; the journal summary.
 
 Try the results:
 
@@ -291,7 +357,7 @@ SELECT * FROM cfo_poc.oz_organized.claim_dq_ai_flagged LIMIT 20;
 
 ```
 saswata30/
-├── databricks.yml                 # Asset Bundle: serverless job, 11 chained tasks
+├── databricks.yml                 # Asset Bundle: pipeline job, late-arrival job, EFR dashboard
 ├── conf/config.yml                # catalog, schemas, data scale, governance groups
 ├── src/
 │   ├── _common.py                 # shared config + helpers (%run-included)
@@ -308,7 +374,10 @@ saswata30/
 │   ├── 07_spoke_claims.py
 │   ├── 08_efr_semantic_gold.py
 │   ├── 09_reporting_marts.py
-│   └── 10_governance_masking.py
+│   ├── 10_governance_masking.py
+│   └── 11_late_arriving_claims.py # scenario: late claim facts → EFR delta journals (standalone)
+├── dashboards/efr_finance.lvdash.json # EFR AI/BI dashboard (deployed by the bundle)
+├── scripts/build_efr_dashboard.py # regenerates the dashboard JSON
 └── docs/architecture.md           # deeper design: data model, lineage, mesh rationale
 ```
 
