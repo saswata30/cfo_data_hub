@@ -10,8 +10,13 @@
 # declarative Data Quality (DQ) engine (task organized_zone_silver). Both log to
 # the abc_control schema. See src/_abc.py and src/_dq.py.
 #
-# Deploy:   databricks bundle deploy   -t dev
+# Late-arriving claims: the standalone job cfo_late_arriving_claims_scenario posts
+# late claim facts into EFR as delta journals (prior-period adjustments for closed
+# periods) and restates the origin-period view. See src/11_late_arriving_claims.py.
+#
+# Deploy:   databricks bundle deploy   -t dev --var warehouse_id=<sql-warehouse-id>
 # Run:      databricks bundle run cfo_data_platform_pipeline -t dev
+#           databricks bundle run cfo_late_arriving_claims_scenario -t dev
 # ===========================================================================
 bundle:
   name: cfo_data_platform
@@ -20,6 +25,8 @@ variables:
   catalog:
     description: Unity Catalog catalog for this deployment (isolates dev/test/prod).
     default: cfo_poc
+  warehouse_id:
+    description: SQL warehouse that serves the EFR dashboard.
 
 # All pipeline tasks run on Serverless Jobs compute — no cluster to size.
 # (Requires serverless workflows enabled in the target workspace.)
@@ -102,19 +109,47 @@ resources:
             notebook_path: ./src/10_governance_masking.py
             base_parameters: { catalog: "${var.catalog}" }
 
+    # Standalone scenario: late-arriving claim facts → EFR delta journals.
+    # NOT part of the main pipeline (it posts into gold incrementally) — run it on demand,
+    # after cfo_data_platform_pipeline has populated the catalog:
+    #   databricks bundle run cfo_late_arriving_claims_scenario -t dev
+    cfo_late_arriving_claims_scenario:
+      name: "[${bundle.target}] CFO Scenario — Late-arriving claims ▸ EFR journals"
+      tags:
+        project: cfo-data-platform-poc
+        owner: saswata30
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+      tasks:
+        - task_key: late_arriving_claims
+          notebook_task:
+            notebook_path: ./src/11_late_arriving_claims.py
+            base_parameters:
+              catalog: "${var.catalog}"
+              n_new_late_claims: "40"
+              n_developed_claims: "60"
+              booking_date: ""           # blank = today
+              close_through_period: ""   # blank = month before booking_date
+
+  # AI/BI dashboard over EFR: booked vs restated P&L, trial balance, late-arrival journals.
+  # Regenerate the JSON with `python scripts/build_efr_dashboard.py`.
+  dashboards:
+    efr_finance_dashboard:
+      display_name: "[${bundle.target}] EFR — Enterprise Finance Reporting"
+      file_path: ./dashboards/efr_finance.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}
+
 targets:
   dev:
     mode: development
     default: true
-    # Set your workspace host here or via `databricks configure` / DATABRICKS_HOST.
-    workspace:
-      host: https://adb-XXXXXXXXXXXX.XX.azuredatabricks.net
+    # Workspace comes from your CLI profile (`-p <profile>`) or DATABRICKS_HOST.
     variables:
       catalog: cfo_poc
 
   prod:
     mode: production
-    workspace:
-      host: https://adb-XXXXXXXXXXXX.XX.azuredatabricks.net
     variables:
       catalog: cfo_prod

@@ -103,7 +103,45 @@ FROM tb
 """)
 print("  view: finance_reporting")
 
+# --- Finance Reporting by origin period: the restated (accident-period) view ---
+# finance_reporting is the *booked* view: closed periods never move, late facts land in
+# the open period as prior-period adjustments. This view re-attributes every journal to
+# the period the loss belongs to, so late-arriving claims restate history here.
+spark.sql(f"""
+CREATE OR REPLACE VIEW {fq('reporting','finance_reporting_by_origin')} AS
+WITH tb AS (
+  SELECT line_of_business, region, origin_period,
+         SUM(CASE WHEN gl_category='REVENUE' THEN balance ELSE 0 END) AS premium_revenue,
+         SUM(CASE WHEN gl_category='EXPENSE' THEN balance ELSE 0 END) AS expenses,
+         SUM(CASE WHEN gl_category='LOSS'    THEN balance ELSE 0 END) AS losses_paid,
+         SUM(CASE WHEN gl_category='RESERVE' THEN balance ELSE 0 END) AS reserves
+  FROM {fq('efr','trial_balance_by_origin')}
+  GROUP BY line_of_business, region, origin_period
+)
+SELECT line_of_business, region, origin_period,
+       premium_revenue, expenses, losses_paid, reserves,
+       (premium_revenue - expenses - losses_paid - reserves) AS underwriting_result,
+       ROUND((losses_paid + reserves)/NULLIF(premium_revenue,0),4) AS loss_ratio,
+       ROUND((losses_paid + reserves + expenses)/NULLIF(premium_revenue,0),4) AS combined_ratio
+FROM tb
+""")
+print("  view: finance_reporting_by_origin")
+
+# --- Late-arrival summary: what each late batch changed, and where it was booked ---
+spark.sql(f"""
+CREATE OR REPLACE VIEW {fq('reporting','efr_late_arrival_summary')} AS
+SELECT batch_id, booking_date, late_type, entry_type, gl_category,
+       line_of_business, origin_period, posting_period,
+       COUNT(DISTINCT claim_id)      AS claims,
+       SUM(adjustment)               AS adjustment,
+       ROUND(AVG(report_lag_days),0) AS avg_report_lag_days
+FROM {fq('efr','late_arrival_log')}
+GROUP BY ALL
+""")
+print("  view: efr_late_arrival_summary")
+
 print("\nCFO Reporting marts complete.")
 for v in ["actuarial_reporting", "risk_fraud_reporting", "policy_reporting",
-          "claims_reporting", "finance_reporting"]:
+          "claims_reporting", "finance_reporting", "finance_reporting_by_origin",
+          "efr_late_arrival_summary"]:
     print(f"    {fq('reporting', v)}")

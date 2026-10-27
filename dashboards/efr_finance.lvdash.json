@@ -1,0 +1,1570 @@
+{
+  "datasets": [
+    {
+      "name": "kpi",
+      "displayName": "Kpi",
+      "queryLines": [
+        "SELECT SUM(premium_revenue) AS premium, SUM(losses_paid + reserves) AS claims_cost, SUM(expenses) AS expenses, SUM(underwriting_result) AS underwriting_result, SUM(losses_paid + reserves) / NULLIF(SUM(premium_revenue), 0) AS loss_ratio, SUM(losses_paid + reserves + expenses) / NULLIF(SUM(premium_revenue), 0) AS combined_ratio FROM reporting.finance_reporting"
+      ]
+    },
+    {
+      "name": "trend",
+      "displayName": "Trend",
+      "queryLines": [
+        "SELECT to_date(period || '-01') AS period_month, view, loss_ratio, combined_ratio FROM ( SELECT posting_period AS period, 'Booked (posting period)' AS view, SUM(losses_paid + reserves) / NULLIF(SUM(premium_revenue), 0) AS loss_ratio, SUM(losses_paid + reserves + expenses) / NULLIF(SUM(premium_revenue), 0) AS combined_ratio FROM reporting.finance_reporting GROUP BY 1, 2 UNION ALL SELECT origin_period AS period, 'Restated (origin period)' AS view, SUM(losses_paid + reserves) / NULLIF(SUM(premium_revenue), 0) AS loss_ratio, SUM(losses_paid + reserves + expenses) / NULLIF(SUM(premium_revenue), 0) AS combined_ratio FROM reporting.finance_reporting_by_origin GROUP BY 1, 2) WHERE to_date(period || '-01') >= add_months((SELECT to_date(max(posting_period) || '-01') FROM efr.trial_balance), -36)"
+      ]
+    },
+    {
+      "name": "lob",
+      "displayName": "Lob",
+      "queryLines": [
+        "SELECT line_of_business, SUM(premium_revenue) AS premium, SUM(losses_paid + reserves) AS claims_cost, SUM(underwriting_result) AS underwriting_result, SUM(losses_paid + reserves + expenses) / NULLIF(SUM(premium_revenue), 0) AS combined_ratio FROM reporting.finance_reporting GROUP BY 1"
+      ]
+    },
+    {
+      "name": "tb",
+      "displayName": "Tb",
+      "queryLines": [
+        "SELECT to_date(posting_period || '-01') AS period_month, gl_category, SUM(balance) AS balance FROM efr.trial_balance WHERE to_date(posting_period || '-01') >= add_months((SELECT to_date(max(posting_period) || '-01') FROM efr.trial_balance), -24) GROUP BY 1, 2"
+      ]
+    },
+    {
+      "name": "accounts",
+      "displayName": "Accounts",
+      "queryLines": [
+        "SELECT account_code, account_name, gl_category, SUM(balance) AS balance, SUM(posting_count) AS postings FROM efr.trial_balance GROUP BY ALL"
+      ]
+    },
+    {
+      "name": "reins",
+      "displayName": "Reins",
+      "queryLines": [
+        "SELECT line_of_business, treaty_type, treaties, ceded_premium, avg_ceded_share FROM efr.reinsurance_ceded"
+      ]
+    },
+    {
+      "name": "late_kpi",
+      "displayName": "Late Kpi",
+      "queryLines": [
+        "SELECT COUNT(DISTINCT batch_id) AS late_batches, COUNT(DISTINCT claim_id) AS late_claims, coalesce(SUM(CASE WHEN entry_type = 'PRIOR_PERIOD_ADJ' THEN adjustment END), 0) AS prior_period_adj, coalesce(SUM(CASE WHEN entry_type = 'LATE_ADJ' THEN adjustment END), 0) AS open_period_adj, (SELECT COUNT(*) FROM efr.period_control WHERE status = 'CLOSED') AS closed_periods, (SELECT max(posting_period) FROM efr.period_control WHERE status = 'CLOSED') AS closed_through FROM efr.late_arrival_log"
+      ]
+    },
+    {
+      "name": "late_origin",
+      "displayName": "Late Origin",
+      "queryLines": [
+        "SELECT to_date(origin_period || '-01') AS origin_month, entry_type, SUM(adjustment) AS adjustment FROM efr.late_arrival_log GROUP BY ALL"
+      ]
+    },
+    {
+      "name": "late_type",
+      "displayName": "Late Type",
+      "queryLines": [
+        "SELECT late_type, gl_category, SUM(adjustment) AS adjustment, COUNT(DISTINCT claim_id) AS claims FROM efr.late_arrival_log GROUP BY ALL"
+      ]
+    },
+    {
+      "name": "late_detail",
+      "displayName": "Late Detail",
+      "queryLines": [
+        "SELECT batch_id, booking_date, late_type, entry_type, gl_category, line_of_business, origin_period, posting_period, claims, adjustment, avg_report_lag_days FROM reporting.efr_late_arrival_summary"
+      ]
+    },
+    {
+      "name": "restatement",
+      "displayName": "Restatement",
+      "queryLines": [
+        "WITH b AS (SELECT posting_period AS period, SUM(losses_paid + reserves) / NULLIF(SUM(premium_revenue), 0) AS booked FROM reporting.finance_reporting GROUP BY 1), o AS (SELECT origin_period AS period, SUM(losses_paid + reserves) / NULLIF(SUM(premium_revenue), 0) AS restated FROM reporting.finance_reporting_by_origin GROUP BY 1) SELECT o.period, b.booked AS booked_loss_ratio, o.restated AS restated_loss_ratio, (o.restated - b.booked) * 100 AS restatement_pts FROM o JOIN b USING (period) WHERE abs(o.restated - b.booked) > 0.00005 ORDER BY abs(o.restated - b.booked) DESC LIMIT 50"
+      ]
+    },
+    {
+      "name": "periods",
+      "displayName": "Periods",
+      "queryLines": [
+        "SELECT posting_period, status, closed_at, closed_by FROM efr.period_control"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "efr_overview",
+      "displayName": "EFR overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "34815415c7",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## EFR \u2014 Enterprise Finance Reporting\n",
+                "General ledger, trial balance and P&L ratios from the CFO Data Hub semantic gold (`efr.*`). **Booked** = by posting period (closed periods frozen). **Restated** = by origin (accident) period, including late-arriving claims.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "87e5e73e3d",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "premium",
+                      "expression": "`premium`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "premium",
+                  "displayName": "Premium revenue",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Premium revenue"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "b59a2b2424",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "claims_cost",
+                      "expression": "`claims_cost`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "claims_cost",
+                  "displayName": "Claims cost (paid + reserves)",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Claims cost (paid + reserves)"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "c31cd5a516",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "expenses",
+                      "expression": "`expenses`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "expenses",
+                  "displayName": "Expenses",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Expenses"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "d30356a0da",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "underwriting_result",
+                      "expression": "`underwriting_result`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "underwriting_result",
+                  "displayName": "Underwriting result",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Underwriting result"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "0f8f98f909",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "loss_ratio",
+                      "expression": "`loss_ratio`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "loss_ratio",
+                  "displayName": "Loss ratio",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Loss ratio"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "fe096f8a60",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "combined_ratio",
+                      "expression": "`combined_ratio`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "combined_ratio",
+                  "displayName": "Combined ratio",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Combined ratio"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "450bb36140",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "trend",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "period_month",
+                      "expression": "`period_month`"
+                    },
+                    {
+                      "name": "combined_ratio",
+                      "expression": "SUM(`combined_ratio`)"
+                    },
+                    {
+                      "name": "view",
+                      "expression": "`view`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "period_month",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "period month"
+                },
+                "y": {
+                  "fieldName": "combined_ratio",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "combined ratio",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    }
+                  }
+                },
+                "color": {
+                  "fieldName": "view",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "view"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Combined ratio: booked vs restated (last 36 months)"
+              },
+              "mark": {
+                "colors": [
+                  "#1B3139",
+                  "#FF3621",
+                  "#00A972",
+                  "#F2A900",
+                  "#2272B4",
+                  "#8BCAE7"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "1960f9b41c",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lob",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "line_of_business",
+                      "expression": "`line_of_business`"
+                    },
+                    {
+                      "name": "underwriting_result",
+                      "expression": "SUM(`underwriting_result`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "underwriting_result",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "underwriting result",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "line_of_business",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  },
+                  "displayName": "line of business"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Underwriting result by line of business"
+              },
+              "mark": {
+                "colors": [
+                  "#1B3139",
+                  "#FF3621",
+                  "#00A972",
+                  "#F2A900",
+                  "#2272B4",
+                  "#8BCAE7"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 5,
+            "width": 2,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "14e5fb707a",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "tb",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "period_month",
+                      "expression": "`period_month`"
+                    },
+                    {
+                      "name": "balance",
+                      "expression": "SUM(`balance`)"
+                    },
+                    {
+                      "name": "gl_category",
+                      "expression": "`gl_category`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "period_month",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "period month"
+                },
+                "y": {
+                  "fieldName": "balance",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "balance",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                },
+                "color": {
+                  "fieldName": "gl_category",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "gl category"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Trial balance by GL category (last 24 months)"
+              },
+              "mark": {
+                "colors": [
+                  "#1B3139",
+                  "#FF3621",
+                  "#00A972",
+                  "#F2A900",
+                  "#2272B4",
+                  "#8BCAE7"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "09b41961f3",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lob",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "line_of_business",
+                      "expression": "`line_of_business`"
+                    },
+                    {
+                      "name": "combined_ratio",
+                      "expression": "MAX(`combined_ratio`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "combined_ratio",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "combined ratio",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "exact",
+                      "places": 0
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "line_of_business",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  },
+                  "displayName": "line of business"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Combined ratio by line of business"
+              },
+              "mark": {
+                "colors": [
+                  "#1B3139",
+                  "#FF3621",
+                  "#00A972",
+                  "#F2A900",
+                  "#2272B4",
+                  "#8BCAE7"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 11,
+            "width": 2,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "716a99ba14",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "accounts",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "account_code",
+                      "expression": "`account_code`"
+                    },
+                    {
+                      "name": "account_name",
+                      "expression": "`account_name`"
+                    },
+                    {
+                      "name": "gl_category",
+                      "expression": "`gl_category`"
+                    },
+                    {
+                      "name": "balance",
+                      "expression": "`balance`"
+                    },
+                    {
+                      "name": "postings",
+                      "expression": "`postings`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "account_code",
+                    "displayName": "account code"
+                  },
+                  {
+                    "fieldName": "account_name",
+                    "displayName": "account name"
+                  },
+                  {
+                    "fieldName": "gl_category",
+                    "displayName": "gl category"
+                  },
+                  {
+                    "fieldName": "balance",
+                    "displayName": "balance"
+                  },
+                  {
+                    "fieldName": "postings",
+                    "displayName": "postings"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Chart of accounts: balances"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 3,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "fdf2ae9ee8",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "reins",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "line_of_business",
+                      "expression": "`line_of_business`"
+                    },
+                    {
+                      "name": "treaty_type",
+                      "expression": "`treaty_type`"
+                    },
+                    {
+                      "name": "treaties",
+                      "expression": "`treaties`"
+                    },
+                    {
+                      "name": "ceded_premium",
+                      "expression": "`ceded_premium`"
+                    },
+                    {
+                      "name": "avg_ceded_share",
+                      "expression": "`avg_ceded_share`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "line_of_business",
+                    "displayName": "line of business"
+                  },
+                  {
+                    "fieldName": "treaty_type",
+                    "displayName": "treaty type"
+                  },
+                  {
+                    "fieldName": "treaties",
+                    "displayName": "treaties"
+                  },
+                  {
+                    "fieldName": "ceded_premium",
+                    "displayName": "ceded premium"
+                  },
+                  {
+                    "fieldName": "avg_ceded_share",
+                    "displayName": "avg ceded share"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Reinsurance ceded"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 17,
+            "width": 3,
+            "height": 5
+          }
+        }
+      ]
+    },
+    {
+      "name": "late_arriving",
+      "displayName": "Late-arriving claims",
+      "layout": [
+        {
+          "widget": {
+            "name": "2d4fe4fdc7",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Late-arriving claims & period close\n",
+                "Late claim facts never re-post a **closed** period: the difference between what a claim now requires and what was booked becomes a **PRIOR_PERIOD_ADJ** in the open booking period, or a **LATE_ADJ** when its origin period is still open. Every line keeps its `origin_period`, which drives the restated view.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "898b4796cc",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "late_kpi",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "late_batches",
+                      "expression": "`late_batches`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "late_batches",
+                  "displayName": "Late batches"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Late batches"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "cc96e02842",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "late_kpi",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "late_claims",
+                      "expression": "`late_claims`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "late_claims",
+                  "displayName": "Late claims"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Late claims"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "573a8661a0",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "late_kpi",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "prior_period_adj",
+                      "expression": "`prior_period_adj`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "prior_period_adj",
+                  "displayName": "Prior-period adjustments",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Prior-period adjustments"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "6098ece5eb",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "late_kpi",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "open_period_adj",
+                      "expression": "`open_period_adj`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "open_period_adj",
+                  "displayName": "Open-period adjustments",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Open-period adjustments"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "8185336c05",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "late_kpi",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "closed_periods",
+                      "expression": "`closed_periods`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "closed_periods",
+                  "displayName": "Closed periods"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Closed periods"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "9915892d13",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "late_kpi",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "closed_through",
+                      "expression": "`closed_through`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "closed_through",
+                  "displayName": "Closed through"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Closed through"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "31927fecda",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "late_origin",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "origin_month",
+                      "expression": "`origin_month`"
+                    },
+                    {
+                      "name": "adjustment",
+                      "expression": "SUM(`adjustment`)"
+                    },
+                    {
+                      "name": "entry_type",
+                      "expression": "`entry_type`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "origin_month",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "origin month"
+                },
+                "y": {
+                  "fieldName": "adjustment",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "adjustment",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                },
+                "color": {
+                  "fieldName": "entry_type",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "entry type"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Late adjustments by origin (accident) period"
+              },
+              "mark": {
+                "colors": [
+                  "#1B3139",
+                  "#FF3621",
+                  "#00A972",
+                  "#F2A900",
+                  "#2272B4",
+                  "#8BCAE7"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "4537e5d2e6",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "late_type",
+                  "disaggregated": false,
+                  "fields": [
+                    {
+                      "name": "late_type",
+                      "expression": "`late_type`"
+                    },
+                    {
+                      "name": "adjustment",
+                      "expression": "SUM(`adjustment`)"
+                    },
+                    {
+                      "name": "gl_category",
+                      "expression": "`gl_category`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "late_type",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "late type"
+                },
+                "y": {
+                  "fieldName": "adjustment",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "adjustment",
+                  "format": {
+                    "type": "number-currency",
+                    "currencyCode": "USD",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                },
+                "color": {
+                  "fieldName": "gl_category",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "gl category"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "By type of late fact"
+              },
+              "mark": {
+                "colors": [
+                  "#1B3139",
+                  "#FF3621",
+                  "#00A972",
+                  "#F2A900",
+                  "#2272B4",
+                  "#8BCAE7"
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 5,
+            "width": 2,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "6dd03af420",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "restatement",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "period",
+                      "expression": "`period`"
+                    },
+                    {
+                      "name": "booked_loss_ratio",
+                      "expression": "`booked_loss_ratio`"
+                    },
+                    {
+                      "name": "restated_loss_ratio",
+                      "expression": "`restated_loss_ratio`"
+                    },
+                    {
+                      "name": "restatement_pts",
+                      "expression": "`restatement_pts`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "period",
+                    "displayName": "period"
+                  },
+                  {
+                    "fieldName": "booked_loss_ratio",
+                    "displayName": "booked loss ratio"
+                  },
+                  {
+                    "fieldName": "restated_loss_ratio",
+                    "displayName": "restated loss ratio"
+                  },
+                  {
+                    "fieldName": "restatement_pts",
+                    "displayName": "restatement pts"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Largest restatements: booked vs restated loss ratio"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "391e0a6cea",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "periods",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "posting_period",
+                      "expression": "`posting_period`"
+                    },
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    },
+                    {
+                      "name": "closed_at",
+                      "expression": "`closed_at`"
+                    },
+                    {
+                      "name": "closed_by",
+                      "expression": "`closed_by`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "posting_period",
+                    "displayName": "posting period"
+                  },
+                  {
+                    "fieldName": "status",
+                    "displayName": "status"
+                  },
+                  {
+                    "fieldName": "closed_at",
+                    "displayName": "closed at"
+                  },
+                  {
+                    "fieldName": "closed_by",
+                    "displayName": "closed by"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Period control"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 11,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "9cdb1f1ba8",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "late_detail",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "batch_id",
+                      "expression": "`batch_id`"
+                    },
+                    {
+                      "name": "booking_date",
+                      "expression": "`booking_date`"
+                    },
+                    {
+                      "name": "late_type",
+                      "expression": "`late_type`"
+                    },
+                    {
+                      "name": "entry_type",
+                      "expression": "`entry_type`"
+                    },
+                    {
+                      "name": "gl_category",
+                      "expression": "`gl_category`"
+                    },
+                    {
+                      "name": "line_of_business",
+                      "expression": "`line_of_business`"
+                    },
+                    {
+                      "name": "origin_period",
+                      "expression": "`origin_period`"
+                    },
+                    {
+                      "name": "posting_period",
+                      "expression": "`posting_period`"
+                    },
+                    {
+                      "name": "claims",
+                      "expression": "`claims`"
+                    },
+                    {
+                      "name": "adjustment",
+                      "expression": "`adjustment`"
+                    },
+                    {
+                      "name": "avg_report_lag_days",
+                      "expression": "`avg_report_lag_days`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "batch_id",
+                    "displayName": "batch id"
+                  },
+                  {
+                    "fieldName": "booking_date",
+                    "displayName": "booking date"
+                  },
+                  {
+                    "fieldName": "late_type",
+                    "displayName": "late type"
+                  },
+                  {
+                    "fieldName": "entry_type",
+                    "displayName": "entry type"
+                  },
+                  {
+                    "fieldName": "gl_category",
+                    "displayName": "gl category"
+                  },
+                  {
+                    "fieldName": "line_of_business",
+                    "displayName": "line of business"
+                  },
+                  {
+                    "fieldName": "origin_period",
+                    "displayName": "origin period"
+                  },
+                  {
+                    "fieldName": "posting_period",
+                    "displayName": "posting period"
+                  },
+                  {
+                    "fieldName": "claims",
+                    "displayName": "claims"
+                  },
+                  {
+                    "fieldName": "adjustment",
+                    "displayName": "adjustment"
+                  },
+                  {
+                    "fieldName": "avg_report_lag_days",
+                    "displayName": "avg report lag days"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Late-arrival journal summary"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 6,
+            "height": 6
+          }
+        }
+      ]
+    }
+  ]
+}
